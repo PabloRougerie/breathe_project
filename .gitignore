@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+*.egg-info/
+dist/
+
+# Environment variables (IMPORTANT!)
+.env
+.env.local
+.envrc
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Data (ne pas commit les données)
+data/
+*.csv
+*.parquet
+
+# MLflow
+mlruns/
+mlartifacts/
+
+# OS
+.DS_Store
+
+# Credentials Google Cloud (AJOUTER!)
+*.json
+!pyproject.toml
+!uv.lock
+credentials*.json
+*-credentials.json
+*.pem
+*.key
