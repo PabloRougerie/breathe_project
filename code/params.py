@@ -6,7 +6,8 @@ GCP_REGION = os.environ.get("GCP_REGION")
 BQ_REGION = os.environ.get("BQ_REGION")
 
 # ========== BigQuery Configuration ==========
-BQ_DATASET = os.environ.get("BQ_DATASET")
+BQ_DATASET_RAW = os.environ.get("BQ_DATASET_RAW")
+BQ_DATASET_PROCESSED = os.environ.get("BQ_DATASET_PROCESSED")
 
 # ========== GCS Configuration ==========
 BUCKET_NAME = os.environ.get("BUCKET_NAME")
@@ -15,6 +16,10 @@ BUCKET_NAME = os.environ.get("BUCKET_NAME")
 MODEL_SAVE = os.environ.get("MODEL_SAVE")
 EVALUATION_START_DATE = os.environ.get("EVALUATION_START_DATE")
 USE_CACHE = os.environ.get("USE_CACHE")
+
+# ========== Service Accounts ==========
+SA_TRAINING = os.environ.get("SA_TRAINING")
+SA_SERVING = os.environ.get("SA_SERVING")
 
 # ========== Prefect Configuration ==========
 PREFECT_FLOW_NAME = os.environ.get("PREFECT_FLOW_NAME")
