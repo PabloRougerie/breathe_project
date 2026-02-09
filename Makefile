@@ -9,6 +9,7 @@ BQ_DATASET_RAW := $(shell echo $$BQ_DATASET_RAW)
 BQ_DATASET_PROCESSED := $(shell echo $$BQ_DATASET_PROCESSED)
 SA_TRAINING := $(shell echo $$SA_TRAINING)
 SA_SERVING := $(shell echo $$SA_SERVING)
+BQ_REGION := $(shell echo $$BQ_REGION)
 
 # setup gcp resource
 gcp-setup: check-env setup-storage setup-sa-training setup-sa-serving
@@ -22,7 +23,7 @@ gcp-setup: check-env setup-storage setup-sa-training setup-sa-serving
 check-env:
 	@echo "Checking environment variables..."
 	@test -n "$(GCP_PROJECT)" || (echo "❌ GCP_PROJECT is not set" && exit 1)
-	@test -n "$(GCP_REGION)" || (echo "❌GCP_REGION is not set" && exit 1)
+	@test -n "$(GCP_REGION)" || (echo "❌ GCP_REGION is not set" && exit 1)
 	@test -n "$(BQ_REGION)" || (echo "❌ BQ_REGION is not set" && exit 1)
 	@test -n "$(BQ_DATASET_RAW)" || (echo "❌ BQ_DATASET_RAW is not set" && exit 1)
 	@test -n "$(BQ_DATASET_PROCESSED)" || (echo "❌ BQ_DATASET_PROCESSED is not set" && exit 1)
@@ -35,7 +36,7 @@ check-env:
 #setup storage: create the bucket for MLflow
 setup-storage:
 	@echo "Setting up storage..."
-	-gsutil mb -p $(GCP_PROJECT) -l $(GCP_REGION) gs://$(BUCKET_NAME)
+	-gcloud storage buckets create gs://$(BUCKET_NAME) --location=$(GCP_REGION)
 	@echo "✅ Bucket created successfully"
 
 	-bq --location=$(BQ_REGION) mk -d $(GCP_PROJECT):$(BQ_DATASET_RAW)
@@ -48,12 +49,12 @@ setup-sa-training:
 	-gcloud iam service-accounts create $(SA_TRAINING) --display-name="Service Account for Training"
 
 #add IAM role to the service account to access the bucket
-	-gcloud projects add-iam-policy-binding $GCP_PROJECT \
+	-gcloud projects add-iam-policy-binding $(GCP_PROJECT) \
   --member=serviceAccount:$(SA_TRAINING)@$(GCP_PROJECT).iam.gserviceaccount.com \
   --role=roles/storage.objectAdmin
 
 #add IAM role to the service account to access the big query dataset
-	-gcloud projects add-iam-policy-binding $GCP_PROJECT \
+	-gcloud projects add-iam-policy-binding $(GCP_PROJECT) \
   --member=serviceAccount:$(SA_TRAINING)@$(GCP_PROJECT).iam.gserviceaccount.com \
   --role=roles/bigquery.dataEditor
 
@@ -69,7 +70,7 @@ setup-sa-serving:
 	-gcloud iam service-accounts create $(SA_SERVING) --display-name="Service Account for Serving"
 
 #add IAM role to the service account to access the bucket
-	-gcloud projects add-iam-policy-binding $GCP_PROJECT \
+	-gcloud storage buckets add-iam-policy-binding gs://$(BUCKET_NAME) \
   --member=serviceAccount:$(SA_SERVING)@$(GCP_PROJECT).iam.gserviceaccount.com \
   --role=roles/storage.objectViewer
 
