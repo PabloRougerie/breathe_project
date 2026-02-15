@@ -1,6 +1,8 @@
 import requests
 import pandas as pd
 import os
+import time
+import json
 from src.ingestion.utils import save_data_local
 
 
@@ -14,10 +16,12 @@ class OpenAQClient:
 
     """
 
-    def __init__(self, api_key=None, radius=5000):
+    def __init__(self, api_key=None, radius=5000, max_retry= 3, cache_base_dir= "../data/cache"):
         self.api_key = api_key or os.getenv("API_AQ")
         self.radius = radius
         self.base_url = "https://api.openaq.org/v3"
+        self.max_retry = max_retry
+        self.cache_base_dir = cache_base_dir
 
         if not self.api_key:
             raise ValueError("API key must be provided or set in API_AQ environment variable")
@@ -90,7 +94,7 @@ class OpenAQClient:
 
         return sensor_ids
 
-    def fetch_one_sensor_data(self, sensor_id, start_date, end_date):
+    def fetch_one_sensor_data(self, sensor_id, start_date, end_date, cache_dir):
         """
         Fetch daily PM2.5 measurements for a single sensor.
 
@@ -102,16 +106,49 @@ class OpenAQClient:
         Returns:
             dict: JSON response with daily measurements
         """
+
+        #check if result for sensor already exists. If exists, returns it and exits
+        cache_file = f"{cache_dir}/sensor_{sensor_id}.json"
+        if os.path.exists(cache_file):
+            with open(cache_file, "r") as f:
+                return json.load(f)
+
+        #if doesnt exist: API call
         url = f"{self.base_url}/sensors/{sensor_id}/measurements/daily"
         params = {
             "datetime_from": start_date,
             "datetime_to": end_date,
             "limit": 1000
         }
-        response = requests.get(url, params=params, headers=self._get_headers())
-        return response.json()
 
-    def extract_all_sensor_data(self, sensor_ids, start_date, end_date):
+        for attempt in range(self.max_retry):
+
+            response = requests.get(url, params=params, headers=self._get_headers())
+
+            if response.status_code == 200:
+
+                #create cache dir if doesnt exist:
+                os.makedirs(cache_dir, exist_ok= True)
+
+                with open(cache_file, "w") as f:
+                    json.dump(response.json(), f)
+
+                return response.json()
+
+            elif attempt < self.max_retry - 1:
+                print(f"call unsuccessful with error {response.status_code}")
+                print(f"retrying, attempt {attempt +1}/{self.max_retry}")
+                time.sleep(5)
+                continue
+
+            else:
+                print(f"api called failed after {self.max_retry} attempts")
+                return {"results": []} #returns an empty results
+
+
+
+
+    def extract_all_sensor_data(self, sensor_ids, start_date, end_date, cache_dir):
         """
         Fetch and extract PM2.5 measurements for multiple sensors.
 
@@ -127,7 +164,7 @@ class OpenAQClient:
 
         # Fetch raw data for each sensor
         for sensor_id in sensor_ids:
-            sensor_data[sensor_id] = self.fetch_one_sensor_data(sensor_id, start_date, end_date)
+            sensor_data[sensor_id] = self.fetch_one_sensor_data(sensor_id, start_date, end_date, cache_dir= cache_dir)
 
         all_dataframes = []
 
@@ -192,7 +229,8 @@ class OpenAQClient:
                 continue
 
             # Extract measurements for filtered sensors
-            aq_by_city = self.extract_all_sensor_data(sensor_list, start_date, end_date)
+            cache_dir = f"{self.cache_base_dir}/{city}"
+            aq_by_city = self.extract_all_sensor_data(sensor_list, start_date, end_date, cache_dir)
             aq_by_city['city'] = city  # Add city column
             all_cities.append(aq_by_city)
 
