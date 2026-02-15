@@ -1,0 +1,205 @@
+import requests
+import pandas as pd
+import numpy as np
+import json
+import time
+import os
+from tqdm.auto import tqdm
+from pathlib import Path
+from src.ingestion.utils import save_data_local
+
+
+class OpenWeatherClient:
+    """
+    Client for fetching daily weather data from OpenWeather API.
+
+    Args:
+        api_key (str): OpenWeather API key (if None, reads from API_OW env var)
+        max_retry (int): Maximum retry attempts for failed requests (default: 3)
+
+    Example:
+        >>> client = OpenWeatherClient(api_key="your_key")
+        >>> cities = {"Paris": {"lat": 48.8566, "lon": 2.3522}}
+        >>> df = client.get_all_data(
+        ...     cities=cities,
+        ...     start_date="2023-01-01",
+        ...     end_date="2023-12-31",
+        ...     output_path="data/raw/weather.csv"
+        ... )
+    """
+
+    def __init__(self, api_key=None, max_retry=3):
+        self.api_key = api_key
+        self.max_retry = max_retry
+        self.base_url = "https://api.openweathermap.org/data/3.0/onecall/day_summary"
+
+        if not self.api_key:
+            raise ValueError("API key must be provided")
+
+    def fetch_city_data(self, city_name, lat, lon, start_date, end_date, cache_dir):
+        """
+        Fetch daily weather data for a single city with caching and retry logic.
+
+        Args:
+            city_name (str): Name of the city (for logging)
+            lat (float): Latitude
+            lon (float): Longitude
+            start_date (str): Start date (YYYY-MM-DD)
+            end_date (str): End date (YYYY-MM-DD)
+            cache_dir (str): Directory path for caching JSON files
+
+        Returns:
+            None (data saved to cache directory)
+        """
+        # Create cache directory if needed
+        os.makedirs(cache_dir, exist_ok=True)
+
+        date_range = pd.date_range(start=start_date, end=end_date, freq="D")
+        successful_call = 0
+        cached_count = 0
+
+        # Iterate through date range
+        for day in tqdm(date_range, desc=f"Fetching {city_name} weather data"):
+            day_str = day.strftime('%Y-%m-%d')
+            cache_file = f"{cache_dir}/weather_{day_str}.json"
+
+            # Skip if already cached
+            if os.path.exists(cache_file):
+                cached_count += 1
+                continue
+
+            # Prepare API parameters
+            params = {
+                "lat": lat,
+                "lon": lon,
+                "date": day_str,
+                "appid": self.api_key,
+                "units": "metric"
+            }
+
+            # Retry loop
+            for attempt in range(self.max_retry):
+                response = requests.get(self.base_url, params)
+
+                # Handle rate limit (HTTP 429)
+                if response.status_code == 429:
+                    if attempt < self.max_retry - 1:
+                        tqdm.write(f"⚠️ [{city_name}] Rate limit on {day_str}. Retrying in 60s...")
+                        time.sleep(60)
+                        continue
+                    else:
+                        tqdm.write(f"❌ [{city_name}] Failed after {self.max_retry} attempts on {day_str}")
+                        break
+
+                # Handle success (HTTP 200)
+                elif response.status_code == 200:
+                    try:
+                        results = response.json()
+                        results_dict = {
+                            "date": results["date"],
+                            "temp_min": results["temperature"]["min"],
+                            "temp_max": results["temperature"]["max"],
+                            "temp_avg": (results["temperature"]["min"] + results["temperature"]["max"]) / 2,
+                            "cloud_cover": results["cloud_cover"]["afternoon"],
+                            "humidity": results["humidity"]["afternoon"],
+                            "precipitation": results["precipitation"]["total"],
+                            "pressure": results["pressure"]["afternoon"],
+                            "wind_speed": results["wind"]["max"]["speed"],
+                            "wind_direction": results["wind"]["max"]["direction"]
+                        }
+
+                        # Save to cache
+                        with open(cache_file, "w") as f:
+                            json.dump(results_dict, f)
+
+                        successful_call += 1
+                        break
+
+                    except (KeyError, json.JSONDecodeError) as e:
+                        tqdm.write(f"❌ [{city_name}] Error parsing {day_str}: {e}")
+                        break
+
+                # Handle other HTTP errors
+                else:
+                    tqdm.write(f"❌ [{city_name}] HTTP {response.status_code} on {day_str}")
+                    break
+
+            # Rate limiting
+            time.sleep(1)
+
+        # Summary
+        if successful_call + cached_count == len(date_range):
+            print(f"✅ [{city_name}] All days fetched! Cached: {cached_count}, New: {successful_call}")
+        else:
+            print(f"⚠️ [{city_name}] Incomplete: {successful_call + cached_count}/{len(date_range)} days")
+
+    def merge_cached_data(self, cache_dir):
+        """
+        Load all cached JSON files from a directory and merge into DataFrame.
+
+        Args:
+            cache_dir (str): Directory containing weather_*.json files
+
+        Returns:
+            pd.DataFrame: Merged and sorted weather data
+        """
+        cache_path = Path(cache_dir)
+        json_files = cache_path.glob("weather_*.json")
+        data = []
+
+        for file in json_files:
+            with open(file, "r") as f:
+                data.append(json.load(f))
+
+        df = pd.DataFrame(data)
+        df["date"] = pd.to_datetime(df["date"])
+        df = df.sort_values(by="date").reset_index(drop=True)
+
+        return df
+
+
+    def get_all_data(self, cities, start_date, end_date, cache_base_dir="../data/cache",
+                     output_path="../data/raw/weather.csv"):
+        """
+        Fetch weather data for multiple cities and save to CSV.
+
+        Args:
+            cities (dict): Cities with coordinates {"city_name": {"lat": float, "lon": float}}
+            start_date (str): Start date (YYYY-MM-DD)
+            end_date (str): End date (YYYY-MM-DD)
+            cache_base_dir (str): Base directory for cache (default: "../data/cache")
+            output_path (str): Output CSV path (default: "../data/raw/weather.csv")
+
+        Returns:
+            pd.DataFrame: Combined weather data for all cities
+        """
+        all_dataframes = []
+
+        # Fetch data for each city
+        for city, coords in cities.items():
+            print(f"\n{'='*50}")
+            print(f"Processing {city}...")
+            print(f"{'='*50}")
+
+            cache_dir = f"{cache_base_dir}/{city}"
+
+            # Fetch and cache data
+            self.fetch_city_data(
+                city_name=city,
+                lat=coords["lat"],
+                lon=coords["lon"],
+                start_date=start_date,
+                end_date=end_date,
+                cache_dir=cache_dir
+            )
+
+            # Load cached data
+            df = self.merge_cached_data(cache_dir)
+
+
+        all_cities_df = pd.concat(all_dataframes, ignore_index=True)
+
+        # Save to disk
+        save_data_local(all_cities_df, output_path)
+
+        return all_cities_df
