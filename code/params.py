@@ -43,6 +43,14 @@ API_CPU = os.environ.get("API_CPU")
 API_TIMEOUT = os.environ.get("API_TIMEOUT")
 API_MIN_INSTANCES = os.environ.get("API_MIN_INSTANCES")
 API_MAX_INSTANCES = os.environ.get("API_MAX_INSTANCES")
+API_OW = os.environ.get("API_OW")
+API_AQ = os.environ.get("API_AQ")
 
 # ========== Artifact Registry ==========
 GAR_REPO = os.environ.get("GAR_REPO")
+
+# ========== PROJECT DATES ==========
+START_TRAIN_DATE_STR= os.environ.get("START_TRAIN_DATE_STR")
+START_PROJECT_DATE_STR= os.environ.get("START_PROJECT_DATE_STR")
+END_TRAIN_DATE_STR= os.environ.get("END_TRAIN_DATE_STR")
+END_PROJECT_DATE_STR= os.environ.get("END_PROJECT_DATE_STR")
