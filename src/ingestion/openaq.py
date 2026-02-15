@@ -6,6 +6,7 @@ import time
 import os
 from tqdm.auto import tqdm
 from pathlib import Path
+from src.data.utils import save_data_local
 
 def fetch_location(coords, radius= 5000, api_key= None):
     """ get locations with sensors based on coordinates
@@ -109,3 +110,4 @@ def extract_all_sensor_data(sensor_id, start_date: str, end_date: str, api_key):
         all_dataframes.append(df_sensor)
 
     all_aq_measurements_by_city = pd.concat(all_dataframes, ignore_index= True)
+    return all_aq_measurements_by_city
