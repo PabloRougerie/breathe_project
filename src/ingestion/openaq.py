@@ -6,7 +6,7 @@ import time
 import os
 from tqdm.auto import tqdm
 from pathlib import Path
-from src.data.utils import save_data_local
+from src.ingestion.utils import save_data_local
 
 def fetch_location(coords, radius= 5000, api_key= None):
     """ get locations with sensors based on coordinates
@@ -111,3 +111,29 @@ def extract_all_sensor_data(sensor_id, start_date: str, end_date: str, api_key):
 
     all_aq_measurements_by_city = pd.concat(all_dataframes, ignore_index= True)
     return all_aq_measurements_by_city
+
+def get_openaq_data(cities, start_date, end_date, api_key, radius= 5000):
+    """ get PM2.5 measurements fromm OpenAQ API for a list of cities within a given time frame
+    Input:
+    cities: a dictionnary in the shape {city_name: ("lat, lon")}
+    """
+    all_cities = []
+    #iterate through cities and get their coordinates
+    for city, coords in cities.items():
+
+        #get location of sensors in that city
+        data_loc = fetch_location(coords, radius= radius, api_key= api_key)
+
+        #filter sensors
+        start_project_date = START_PROJECT_DATE_STR
+        end_project_date = END_TRAIN_DATE_STR
+        sensor_list = filter_sensors(data_loc, start_project_date, end_project_date)
+
+        #extract and filter all sensor data for the given date range
+        aq_by_city= extract_all_sensor_data(sensor_id= sensor_list, start_date= start_date, end_date= end_date, api_key= api_key)
+        all_cities.append(aq_by_city)
+
+    all_aq_measurements = pd.DataFrame(all_cities)
+
+    save_data_local(df= all_aq_measurements, output_path= "../../data/raw/aq_data.csv")
+    return all_aq_measurements
