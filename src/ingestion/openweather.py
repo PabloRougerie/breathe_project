@@ -29,12 +29,12 @@ class OpenWeatherClient:
     """
 
     def __init__(self, api_key=None, max_retry=3):
-        self.api_key = api_key
+        self.api_key = api_key or os.getenv("API_OW")
         self.max_retry = max_retry
         self.base_url = "https://api.openweathermap.org/data/3.0/onecall/day_summary"
 
         if not self.api_key:
-            raise ValueError("API key must be provided")
+            raise ValueError("API key must be provided or set in API_OW environment variable")
 
     def fetch_city_data(self, city_name, lat, lon, start_date, end_date, cache_dir):
         """
@@ -195,11 +195,19 @@ class OpenWeatherClient:
 
             # Load cached data
             df = self.merge_cached_data(cache_dir)
-
-
+            
+            if not df.empty:
+                df["city"] = city
+                all_dataframes.append(df)
+        
+        # Combine all cities
+        if not all_dataframes:
+            print("⚠️ No data fetched for any city")
+            return pd.DataFrame()
+        
         all_cities_df = pd.concat(all_dataframes, ignore_index=True)
-
+        
         # Save to disk
         save_data_local(all_cities_df, output_path)
-
+        
         return all_cities_df
