@@ -316,7 +316,7 @@ wheels = [
 [[package]]
 name = "breathe-project"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "google-cloud-bigquery" },
     { name = "google-cloud-storage" },
@@ -329,6 +329,7 @@ dependencies = [
     { name = "pandas" },
     { name = "prefect" },
     { name = "python-dateutil" },
+    { name = "python-dotenv" },
     { name = "requests" },
     { name = "scikit-learn" },
     { name = "seaborn" },
@@ -366,6 +367,7 @@ requires-dist = [
     { name = "pandas", specifier = ">=2.0.0,<3.0.0" },
     { name = "prefect", specifier = ">=3.6.15" },
     { name = "python-dateutil", specifier = ">=2.9.0.post0" },
+    { name = "python-dotenv", specifier = ">=1.0.0" },
     { name = "requests", specifier = ">=2.32.5" },
     { name = "scikit-learn", specifier = ">=1.8.0" },
     { name = "seaborn", specifier = ">=0.13.2" },
