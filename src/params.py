@@ -61,3 +61,20 @@ START_TRAIN_DATE_STR= os.environ.get("START_TRAIN_DATE_STR")
 START_PROJECT_DATE_STR= os.environ.get("START_PROJECT_DATE_STR")
 END_TRAIN_DATE_STR= os.environ.get("END_TRAIN_DATE_STR")
 END_PROJECT_DATE_STR= os.environ.get("END_PROJECT_DATE_STR")
+
+
+CITIES = {
+    "Paris": {'lat': 48.8622, 'lon': 2.3470},           # Les Halles
+    "Lyon": {'lat': 45.7267, 'lon': 4.8275},            # Gerland
+    "New York": {"lat": 40.8259, "lon": -73.9508},      # St Nicholas Terrace, Manhattanville
+    "Los Angeles": {"lat": 34.0522, "lon": -118.2437},  # Original coordinates
+    "Delhi": {"lat": 28.6070, "lon": 77.2456},          # Near Sher Shah Road
+    "London": {"lat": 51.5045, "lon": -0.1363},         # St James, Central London
+    "Rio de Janeiro": {"lat": -22.9083, "lon": -43.1764}, # Near Largo da Carioca
+    "Berlin": {"lat": 52.4990, "lon": 13.4437},         # Near Görlitzer Park
+    "Rome": {"lat": 41.9028, "lon": 12.4964},
+    "Barcelona": {"lat": 41.3954, "lon": 2.1161},       # Near Real Club de Polo
+    "Mumbai": {"lat": 19.0728, "lon": 72.8681},         # Near Kalina Kurla Road
+    "Mexico City": {"lat": 19.3700, "lon": -99.1560},   # Avenida Municipio Libre, Colonia Letrán Valle
+    "Santiago": {"lat": -33.4192, "lon": -70.7417}      # Cerro Navia
+}

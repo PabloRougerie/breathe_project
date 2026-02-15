@@ -33,19 +33,23 @@ class OpenAQClient:
         """Get API request headers with authentication."""
         return {"X-API-key": self.api_key}
 
-    def fetch_location(self, coords):
+    def fetch_location(self, lat, lon):
         """
         Get locations with PM2.5 sensors based on coordinates.
-
+        
         Args:
-            coords (str): Lat and Lon coordinates as "lat,lon"
-
+            lat (float): Latitude
+            lon (float): Longitude
+        
         Returns:
             dict: JSON response with location data
         """
+        # Convert to string format required by OpenAQ API
+        coords_str = f"{lat},{lon}"
+        
         params = {
             "parameters_id": 2,  # PM2.5 sensors
-            "coordinates": coords,
+            "coordinates": coords_str,
             "radius": self.radius,
             "limit": 1000
         }
@@ -162,47 +166,47 @@ class OpenAQClient:
         all_measurements = pd.concat(all_dataframes, ignore_index=True)
         return all_measurements
 
-    def get_data(self, cities, start_date, end_date, start_project_date,
+    def get_data(self, cities, start_date, end_date, start_project_date, 
                  end_project_date, output_path="../../data/raw/aq_data.csv"):
         """
         Get PM2.5 measurements from OpenAQ API for multiple cities.
-
+        
         Args:
-            cities (dict): Cities with coordinates {city_name: "lat,lon"}
+            cities (dict): Cities with coordinates {city_name: {"lat": float, "lon": float}}
             start_date (str): Data fetch start date (YYYY-MM-DD)
             end_date (str): Data fetch end date (YYYY-MM-DD)
             start_project_date (str): Project start date for sensor filtering (YYYY-MM-DD)
             end_project_date (str): Project end date for sensor filtering (YYYY-MM-DD)
             output_path (str): Output CSV path (default: "../../data/raw/aq_data.csv")
-
+        
         Returns:
             pd.DataFrame: Combined PM2.5 measurements for all cities
         """
         all_cities = []
-
+        
         # Process each city
         for city, coords in cities.items():
             print(f"\nProcessing {city}...")
-
+            
             # Get sensor locations in the city
-            data_loc = self.fetch_location(coords)
-
+            data_loc = self.fetch_location(lat=coords["lat"], lon=coords["lon"])
+            
             # Filter sensors based on project timeline
             sensor_list = self.filter_sensors(data_loc, start_project_date, end_project_date)
-
+            
             if not sensor_list:
                 print(f"⚠️  No sensors found for {city}")
                 continue
-
+            
             # Extract measurements for filtered sensors
             aq_by_city = self.extract_all_sensor_data(sensor_list, start_date, end_date)
             aq_by_city['city'] = city  # Add city column
             all_cities.append(aq_by_city)
-
+        
         # Combine all cities data
         all_aq_measurements = pd.concat(all_cities, ignore_index=True)
-
+        
         # Save to disk
         save_data_local(df=all_aq_measurements, output_path=output_path)
-
+        
         return all_aq_measurements
