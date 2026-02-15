@@ -8,132 +8,206 @@ from tqdm.auto import tqdm
 from pathlib import Path
 from src.ingestion.utils import save_data_local
 
-def fetch_location(coords, radius= 5000, api_key= None):
-    """ get locations with sensors based on coordinates
 
-    Inputs:
-    coords: Lat and Lon coordinates in string "lat,lon"
-    radius: radius around coordinates, in METERS (max 50000 meters I think)
-    api_key: openAQ API key
-
-    Outputs:
-    a json file with location data
-
+class OpenAQClient:
     """
-
-    params_loc = {"parameters_id" : 2, #PM2.5 sensors
-               "coordinates": coords, # Lat and Lon
-               "radius": radius, # 5km radius
-               "limit": 1000 #limit of results
-              }
-    header_loc = {"X-API-key": API_AQ}
-    url_loc = "https://api.openaq.org/v3/locations"
-    data_loc = requests.get(url= url_loc, params= params_loc, headers= header_loc).json()
-
-    return data_loc
-
-def filter_sensors(data_loc, start_project_date, end_project_date):
-    """filter sensors to keep only high grade sensor
-    that are alive throughout the project duration
+    Client for fetching PM2.5 air quality data from OpenAQ API.
+    
+    Args:
+        api_key (str): OpenAQ API key (if None, reads from API_AQ env var)
+        radius (int): Default search radius in meters (default: 5000)
+    
+    Example:
+        >>> client = OpenAQClient(api_key="your_key")
+        >>> data = client.get_data(
+        ...     cities={"Paris": "48.8566,2.3522"},
+        ...     start_date="2023-01-01",
+        ...     end_date="2023-12-31"
+        ... )
     """
-    #filter for monitor grade sensors
-    monitor_loc = [loc for loc in data_loc["results"] if loc["isMonitor"]]
-
-    #filter for sensor still alive at end of project (train + val + tests)
-    end_project_date_dt = pd.to_datetime(end_project_date, utc= True)
-    alived_loc = [loc for loc in monitor_loc if pd.to_datetime(loc["datetimeLast"]["utc"]) >= end_project_date_dt]
-
-    #filter for availability since beginning of training set
-    start_project_date_dt = pd.to_datetime(start_project_date, utc= True)
-    full_time_loc = [loc for loc in alived_loc if pd.to_datetime(loc["datetimeFirst"]["utc"]) <= start_project_date_dt]
-
-    print("============")
-    print(f"\n Initial number of points of measurement: {len(monitor_loc)}")
-    print(f"Number of points of measurement still alive at end of dataset: {len(alived_loc)}")
-    print(f"Number of points of measurement available throughout dataset: {len(full_time_loc)}")
-
-    #get pm2.5 sensors id
-    sensors_id = []
-    for loc in full_time_loc:
-        for sensor in loc["sensors"]:
-            if sensor["parameter"]["id"] == 2:
-                sensors_id.append(sensor["id"])
-
-    return sensors_id
-
-
-def fetch_one_sensor_data(sensor_id, start_date: str, end_date: str, api_key):
-    """fetch PM2.5 measurements for a given sensor between specified dates"""
-
-    url_sensors = f"https://api.openaq.org/v3/sensors/{sensor_id}/measurements/daily"
-    params_sensors = {
-                    "datetime_from": start_train_date,
-                    "datetime_to": end_train_date,
-                    "limit": 1000
-    }
-
-    results_sensor = requests.get(url_sensors, params= params_sensors, headers = header_loc).json()
-    return results_sensor
-
-def extract_all_sensor_data(sensor_id, start_date: str, end_date: str, api_key):
-    """fetch PM2.5 measurements for a list of sensors between specified dates
-    and extract relevant features"""
-    sensor_data = {}
-
-    #get raw data for each sensor
-    for sensor in sensor_id:
-        sensor_data[sensor] = fetch_one_sensor_data(sensor, start_date= start_date, end_date= end_date, api_key= api_key)
-
-    all_dataframes= []
-
-    #iterates through all sensors and data
-    for sensor_id, data in sensor_data.items():
-        rows = [] #empty list to add required fields for a given sensor_id
-
-    #iterates over daily measurements for that sensor
-        for results in data["results"]:
-            rows.append({
-                "sensor_id": sensor_id,
-                "date_from_utc": results["period"]['datetimeFrom']['utc'],
-                "date_from_local": results["period"]['datetimeFrom']['local'],
-                "date_to_utc": results["period"]['datetimeTo']['utc'],
-                "date_to_local": results["period"]['datetimeTo']['local'],
-                "pm25_avg": results["value"],
-                "pm25_min": results["summary"]["min"],
-                "pm25_q25": results["summary"]["q25"],
-                "pm25_median": results["summary"]["median"],
-                "pm25_q75": results["summary"]["q75"],
-                "pm25_max": results["summary"]["max"],
-                "coverage": results["coverage"]["percentComplete"]
-            })
-        df_sensor = pd.DataFrame(rows)
-        all_dataframes.append(df_sensor)
-
-    all_aq_measurements_by_city = pd.concat(all_dataframes, ignore_index= True)
-    return all_aq_measurements_by_city
-
-def get_openaq_data(cities, start_date, end_date, api_key, radius= 5000):
-    """ get PM2.5 measurements fromm OpenAQ API for a list of cities within a given time frame
-    Input:
-    cities: a dictionnary in the shape {city_name: ("lat, lon")}
-    """
-    all_cities = []
-    #iterate through cities and get their coordinates
-    for city, coords in cities.items():
-
-        #get location of sensors in that city
-        data_loc = fetch_location(coords, radius= radius, api_key= api_key)
-
-        #filter sensors
-        start_project_date = START_PROJECT_DATE_STR
-        end_project_date = END_TRAIN_DATE_STR
-        sensor_list = filter_sensors(data_loc, start_project_date, end_project_date)
-
-        #extract and filter all sensor data for the given date range
-        aq_by_city= extract_all_sensor_data(sensor_id= sensor_list, start_date= start_date, end_date= end_date, api_key= api_key)
-        all_cities.append(aq_by_city)
-
-    all_aq_measurements = pd.DataFrame(all_cities)
-
-    save_data_local(df= all_aq_measurements, output_path= "../../data/raw/aq_data.csv")
-    return all_aq_measurements
+    
+    def __init__(self, api_key=None, radius=5000):
+        self.api_key = api_key or os.getenv("API_AQ")
+        self.radius = radius
+        self.base_url = "https://api.openaq.org/v3"
+        
+        if not self.api_key:
+            raise ValueError("API key must be provided or set in API_AQ environment variable")
+    
+    def _get_headers(self):
+        """Get API request headers with authentication."""
+        return {"X-API-key": self.api_key}
+    
+    def fetch_location(self, coords):
+        """
+        Get locations with PM2.5 sensors based on coordinates.
+        
+        Args:
+            coords (str): Lat and Lon coordinates as "lat,lon"
+        
+        Returns:
+            dict: JSON response with location data
+        """
+        params = {
+            "parameters_id": 2,  # PM2.5 sensors
+            "coordinates": coords,
+            "radius": self.radius,
+            "limit": 1000
+        }
+        url = f"{self.base_url}/locations"
+        response = requests.get(url=url, params=params, headers=self._get_headers())
+        return response.json()
+    
+    def filter_sensors(self, data_loc, start_project_date, end_project_date):
+        """
+        Filter sensors to keep only monitor-grade sensors active throughout project duration.
+        
+        Args:
+            data_loc (dict): Location data from fetch_location()
+            start_project_date (str): Project start date (YYYY-MM-DD)
+            end_project_date (str): Project end date (YYYY-MM-DD)
+        
+        Returns:
+            list: PM2.5 sensor IDs that meet filtering criteria
+        """
+        # Filter for monitor-grade sensors only
+        monitor_loc = [loc for loc in data_loc["results"] if loc["isMonitor"]]
+        
+        # Filter for sensors still active at end of project
+        end_project_date_dt = pd.to_datetime(end_project_date, utc=True)
+        alive_loc = [loc for loc in monitor_loc 
+                     if pd.to_datetime(loc["datetimeLast"]["utc"]) >= end_project_date_dt]
+        
+        # Filter for sensors available since beginning of project
+        start_project_date_dt = pd.to_datetime(start_project_date, utc=True)
+        full_time_loc = [loc for loc in alive_loc 
+                         if pd.to_datetime(loc["datetimeFirst"]["utc"]) <= start_project_date_dt]
+        
+        print("=" * 50)
+        print(f"Initial monitor-grade sensors: {len(monitor_loc)}")
+        print(f"Sensors active at end date: {len(alive_loc)}")
+        print(f"Sensors with full coverage: {len(full_time_loc)}")
+        print("=" * 50)
+        
+        # Extract PM2.5 sensor IDs
+        sensor_ids = []
+        for loc in full_time_loc:
+            for sensor in loc["sensors"]:
+                if sensor["parameter"]["id"] == 2:  # PM2.5 parameter
+                    sensor_ids.append(sensor["id"])
+        
+        return sensor_ids
+    
+    def fetch_one_sensor_data(self, sensor_id, start_date, end_date):
+        """
+        Fetch daily PM2.5 measurements for a single sensor.
+        
+        Args:
+            sensor_id (int): Sensor ID
+            start_date (str): Start date (YYYY-MM-DD)
+            end_date (str): End date (YYYY-MM-DD)
+        
+        Returns:
+            dict: JSON response with daily measurements
+        """
+        url = f"{self.base_url}/sensors/{sensor_id}/measurements/daily"
+        params = {
+            "datetime_from": start_date,
+            "datetime_to": end_date,
+            "limit": 1000
+        }
+        response = requests.get(url, params=params, headers=self._get_headers())
+        return response.json()
+    
+    def extract_all_sensor_data(self, sensor_ids, start_date, end_date):
+        """
+        Fetch and extract PM2.5 measurements for multiple sensors.
+        
+        Args:
+            sensor_ids (list): List of sensor IDs to fetch
+            start_date (str): Start date (YYYY-MM-DD)
+            end_date (str): End date (YYYY-MM-DD)
+        
+        Returns:
+            pd.DataFrame: Aggregated measurements from all sensors
+        """
+        sensor_data = {}
+        
+        # Fetch raw data for each sensor
+        for sensor_id in sensor_ids:
+            sensor_data[sensor_id] = self.fetch_one_sensor_data(sensor_id, start_date, end_date)
+        
+        all_dataframes = []
+        
+        # Extract and structure data for each sensor
+        for sensor_id, data in sensor_data.items():
+            rows = []
+            
+            # Extract daily measurements
+            for result in data["results"]:
+                rows.append({
+                    "sensor_id": sensor_id,
+                    "date_from_utc": result["period"]['datetimeFrom']['utc'],
+                    "date_from_local": result["period"]['datetimeFrom']['local'],
+                    "date_to_utc": result["period"]['datetimeTo']['utc'],
+                    "date_to_local": result["period"]['datetimeTo']['local'],
+                    "pm25_avg": result["value"],
+                    "pm25_min": result["summary"]["min"],
+                    "pm25_q25": result["summary"]["q25"],
+                    "pm25_median": result["summary"]["median"],
+                    "pm25_q75": result["summary"]["q75"],
+                    "pm25_max": result["summary"]["max"],
+                    "coverage": result["coverage"]["percentComplete"]
+                })
+            
+            df_sensor = pd.DataFrame(rows)
+            all_dataframes.append(df_sensor)
+        
+        # Concatenate all sensor DataFrames
+        all_measurements = pd.concat(all_dataframes, ignore_index=True)
+        return all_measurements
+    
+    def get_data(self, cities, start_date, end_date, start_project_date, 
+                 end_project_date, output_path="../../data/raw/aq_data.csv"):
+        """
+        Get PM2.5 measurements from OpenAQ API for multiple cities.
+        
+        Args:
+            cities (dict): Cities with coordinates {city_name: "lat,lon"}
+            start_date (str): Data fetch start date (YYYY-MM-DD)
+            end_date (str): Data fetch end date (YYYY-MM-DD)
+            start_project_date (str): Project start date for sensor filtering (YYYY-MM-DD)
+            end_project_date (str): Project end date for sensor filtering (YYYY-MM-DD)
+            output_path (str): Output CSV path (default: "../../data/raw/aq_data.csv")
+        
+        Returns:
+            pd.DataFrame: Combined PM2.5 measurements for all cities
+        """
+        all_cities = []
+        
+        # Process each city
+        for city, coords in cities.items():
+            print(f"\nProcessing {city}...")
+            
+            # Get sensor locations in the city
+            data_loc = self.fetch_location(coords)
+            
+            # Filter sensors based on project timeline
+            sensor_list = self.filter_sensors(data_loc, start_project_date, end_project_date)
+            
+            if not sensor_list:
+                print(f"⚠️  No sensors found for {city}")
+                continue
+            
+            # Extract measurements for filtered sensors
+            aq_by_city = self.extract_all_sensor_data(sensor_list, start_date, end_date)
+            aq_by_city['city'] = city  # Add city column
+            all_cities.append(aq_by_city)
+        
+        # Combine all cities data
+        all_aq_measurements = pd.concat(all_cities, ignore_index=True)
+        
+        # Save to disk
+        save_data_local(df=all_aq_measurements, output_path=output_path)
+        
+        return all_aq_measurements
