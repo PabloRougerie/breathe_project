@@ -2,6 +2,7 @@ import requests
 import pandas as pd
 import os
 import time
+from datetime import datetime
 import json
 from src.ingestion.utils import save_data_local
 
@@ -16,12 +17,13 @@ class OpenAQClient:
 
     """
 
-    def __init__(self, api_key=None, radius=5000, max_retry= 3, cache_base_dir= "../data/cache"):
+    def __init__(self, api_key=None, radius=5000, max_retry=3, cache_base_dir="../data/cache", min_coverage=0.75):
         self.api_key = api_key or os.getenv("API_AQ")
         self.radius = radius
         self.base_url = "https://api.openaq.org/v3"
         self.max_retry = max_retry
         self.cache_base_dir = cache_base_dir
+        self.min_coverage = min_coverage
 
         if not self.api_key:
             raise ValueError("API key must be provided or set in API_AQ environment variable")
@@ -41,15 +43,15 @@ class OpenAQClient:
         Returns:
             dict: JSON response with location data
         """
-        # Convert to string format required by OpenAQ API
         coords_str = f"{lat},{lon}"
 
         params = {
-            "parameters_id": 2,  # PM2.5 sensors
+            "parameters_id": 2,  # PM2.5 only
             "coordinates": coords_str,
             "radius": self.radius,
             "limit": 1000
         }
+        
         url = f"{self.base_url}/locations"
         response = requests.get(url=url, params=params, headers=self._get_headers())
         return response.json()
@@ -66,30 +68,30 @@ class OpenAQClient:
         Returns:
             list: PM2.5 sensor IDs that meet filtering criteria
         """
-        # Filter for monitor-grade sensors only
+        # Step 1: Keep only monitor-grade locations
         monitor_loc = [loc for loc in data_loc["results"] if loc["isMonitor"]]
 
-        # Filter for sensors still active at end of project
+        # Step 2: Keep locations still active at end of project
         end_project_date_dt = pd.to_datetime(end_project_date, utc=True)
         alive_loc = [loc for loc in monitor_loc
                      if pd.to_datetime(loc["datetimeLast"]["utc"]) >= end_project_date_dt]
 
-        # Filter for sensors available since beginning of project
+        # Step 3: Keep locations already active at start of project
         start_project_date_dt = pd.to_datetime(start_project_date, utc=True)
         full_time_loc = [loc for loc in alive_loc
                          if pd.to_datetime(loc["datetimeFirst"]["utc"]) <= start_project_date_dt]
 
-        print("=" * 50)
-        print(f"Initial monitor-grade sensors: {len(monitor_loc)}")
-        print(f"Sensors active at end date: {len(alive_loc)}")
-        print(f"Sensors with full coverage: {len(full_time_loc)}")
-        print("=" * 50)
+        print("  " + "=" * 46)
+        print(f"  Monitor-grade locations: {len(monitor_loc)}")
+        print(f"  Active at end date: {len(alive_loc)}")
+        print(f"  Full coverage: {len(full_time_loc)}")
+        print("  " + "=" * 46)
 
-        # Extract PM2.5 sensor IDs
+        # Extract PM2.5 sensor IDs from filtered locations
         sensor_ids = []
         for loc in full_time_loc:
             for sensor in loc["sensors"]:
-                if sensor["parameter"]["id"] == 2:  # PM2.5 parameter
+                if sensor["parameter"]["id"] == 2:  # PM2.5
                     sensor_ids.append(sensor["id"])
 
         return sensor_ids
@@ -102,19 +104,20 @@ class OpenAQClient:
             sensor_id (int): Sensor ID
             start_date (str): Start date (YYYY-MM-DD)
             end_date (str): End date (YYYY-MM-DD)
+            cache_dir (str): Directory to cache sensor data
 
         Returns:
             dict: JSON response with daily measurements
         """
-
-        #check if result for sensor already exists. If exists, returns it and exits
+        # Check cache first
         cache_file = f"{cache_dir}/sensor_{sensor_id}.json"
         if os.path.exists(cache_file):
+            print(f"  └─ Sensor {sensor_id}: using cached data")
             with open(cache_file, "r") as f:
                 return json.load(f)
 
-        #if doesnt exist: API call
-        url = f"{self.base_url}/sensors/{sensor_id}/measurements/daily"
+        # Fetch from API
+        url = f"{self.base_url}/sensors/{sensor_id}/days"
         params = {
             "datetime_from": start_date,
             "datetime_to": end_date,
@@ -126,27 +129,41 @@ class OpenAQClient:
             response = requests.get(url, params=params, headers=self._get_headers())
 
             if response.status_code == 200:
+                results = response.json()
+                print(f"  └─ Sensor {sensor_id}: fetched from API")
 
-                #create cache dir if doesnt exist:
-                os.makedirs(cache_dir, exist_ok= True)
+                # Check 1: empty JSON?
+                if not results.get("results") or len(results.get("results")) == 0:
+                    print(f"      ⚠️  No measurements returned, skipping")
+                    return {"results": []}
 
+                # Check 2: low coverage?
+                start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+                end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+                expected_measurements = (end_dt - start_dt).days + 1
+
+                nb_measurements = results.get("meta", {}).get("found", 0)
+                coverage_ratio = nb_measurements / expected_measurements
+
+                if coverage_ratio < self.min_coverage:
+                    print(f"      ⚠️  Coverage too low ({coverage_ratio:.0%}), skipping")
+                    return {"results": []}
+
+                # All good, save to cache
+                os.makedirs(cache_dir, exist_ok=True)
                 with open(cache_file, "w") as f:
-                    json.dump(response.json(), f)
+                    json.dump(results, f)
 
-                return response.json()
+                return results
 
             elif attempt < self.max_retry - 1:
-                print(f"call unsuccessful with error {response.status_code}")
-                print(f"retrying, attempt {attempt +1}/{self.max_retry}")
+                print(f"      ⚠️  API error {response.status_code}, retrying ({attempt + 2}/{self.max_retry})...")
                 time.sleep(5)
                 continue
 
             else:
-                print(f"api called failed after {self.max_retry} attempts")
-                return {"results": []} #returns an empty results
-
-
-
+                print(f"      ✗ API call failed after {self.max_retry} attempts")
+                return {"results": []}
 
     def extract_all_sensor_data(self, sensor_ids, start_date, end_date, cache_dir):
         """
@@ -161,18 +178,22 @@ class OpenAQClient:
             pd.DataFrame: Aggregated measurements from all sensors
         """
         sensor_data = {}
+        print(f"  Fetching data for {len(sensor_ids)} sensors...")
 
         # Fetch raw data for each sensor
-        for sensor_id in sensor_ids:
-            sensor_data[sensor_id] = self.fetch_one_sensor_data(sensor_id, start_date, end_date, cache_dir= cache_dir)
+        for i, sensor_id in enumerate(sensor_ids, 1):
+            print(f"  [{i}/{len(sensor_ids)}] Sensor {sensor_id}")
+            sensor_data[sensor_id] = self.fetch_one_sensor_data(sensor_id, start_date, end_date, cache_dir=cache_dir)
 
         all_dataframes = []
 
         # Extract and structure data for each sensor
         for sensor_id, data in sensor_data.items():
-            rows = []
+            # Skip sensors with no data
+            if not data.get("results") or len(data.get("results")) == 0:
+                continue
 
-            # Extract daily measurements
+            rows = []
             for result in data["results"]:
                 rows.append({
                     "sensor_id": sensor_id,
@@ -192,12 +213,18 @@ class OpenAQClient:
             df_sensor = pd.DataFrame(rows)
             all_dataframes.append(df_sensor)
 
+        # Check if we got any data
+        if not all_dataframes:
+            print(f"  ⚠️  No valid sensor data found")
+            return pd.DataFrame()
+
         # Concatenate all sensor DataFrames
         all_measurements = pd.concat(all_dataframes, ignore_index=True)
+        print(f"  ✓ {len(all_measurements)} measurements extracted")
         return all_measurements
 
     def get_data(self, cities, start_date, end_date, start_project_date,
-                 end_project_date, output_path="../../data/raw/aq_data.csv"):
+                 end_project_date, output_path="../data/raw/aq_data.csv"):
         """
         Get PM2.5 measurements from OpenAQ API for multiple cities.
 
@@ -228,16 +255,34 @@ class OpenAQClient:
                 print(f"⚠️  No sensors found for {city}")
                 continue
 
+            print(f"✓ {len(sensor_list)} sensor(s) selected for {city}")
+
             # Extract measurements for filtered sensors
-            cache_dir = f"{self.cache_base_dir}/{city}"
+            cache_dir = f"{self.cache_base_dir}/{city}/air_qual"
             aq_by_city = self.extract_all_sensor_data(sensor_list, start_date, end_date, cache_dir)
-            aq_by_city['city'] = city  # Add city column
-            all_cities.append(aq_by_city)
+            
+            # Only add if we got data
+            if not aq_by_city.empty:
+                aq_by_city['city'] = city
+                all_cities.append(aq_by_city)
+            else:
+                print(f"  ⚠️  No valid data extracted for {city}")
+
+        # Check if we got any data
+        if not all_cities:
+            raise ValueError("No valid data found for any city")
 
         # Combine all cities data
         all_aq_measurements = pd.concat(all_cities, ignore_index=True)
 
         # Save to disk
         save_data_local(df=all_aq_measurements, output_path=output_path)
+
+        print(f"\n{'=' * 50}")
+        print(f"✓ Ingestion complete!")
+        print(f"  {len(all_cities)} cities processed")
+        print(f"  {len(all_aq_measurements)} total measurements")
+        print(f"  Saved to: {output_path}")
+        print(f"{'=' * 50}")
 
         return all_aq_measurements
