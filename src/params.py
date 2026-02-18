@@ -69,8 +69,7 @@ CITIES = {
     "New York": {"lat": 40.8259, "lon": -73.9508},      # St Nicholas Terrace, Manhattanville
     "Los Angeles": {"lat": 34.0522, "lon": -118.2437},  # Original coordinates
     "Delhi": {"lat": 28.6070, "lon": 77.2456},          # Near Sher Shah Road
-    "London": {"lat": 51.5045, "lon": -0.1363},         # St James, Central London
-    "Rio de Janeiro": {"lat": -22.9083, "lon": -43.1764}, # Near Largo da Carioca
+    "London": {"lat": 51.5045, "lon": -0.1363},         # St James, Central London # Near Largo da Carioca
     "Berlin": {"lat": 52.4990, "lon": 13.4437},         # Near Görlitzer Park
     "Rome": {"lat": 41.9028, "lon": 12.4964},
     "Barcelona": {"lat": 41.3954, "lon": 2.1161},       # Near Real Club de Polo

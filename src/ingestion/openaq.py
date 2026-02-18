@@ -51,7 +51,7 @@ class OpenAQClient:
             "radius": self.radius,
             "limit": 1000
         }
-        
+
         url = f"{self.base_url}/locations"
         response = requests.get(url=url, params=params, headers=self._get_headers())
         return response.json()
@@ -119,8 +119,8 @@ class OpenAQClient:
         # Fetch from API
         url = f"{self.base_url}/sensors/{sensor_id}/days"
         params = {
-            "datetime_from": start_date,
-            "datetime_to": end_date,
+            "date_from": start_date,
+            "date_to": end_date,
             "limit": 1000
         }
 
@@ -131,6 +131,7 @@ class OpenAQClient:
             if response.status_code == 200:
                 results = response.json()
                 print(f"  └─ Sensor {sensor_id}: fetched from API")
+                print(results)
 
                 # Check 1: empty JSON?
                 if not results.get("results") or len(results.get("results")) == 0:
@@ -260,7 +261,7 @@ class OpenAQClient:
             # Extract measurements for filtered sensors
             cache_dir = f"{self.cache_base_dir}/{city}/air_qual"
             aq_by_city = self.extract_all_sensor_data(sensor_list, start_date, end_date, cache_dir)
-            
+
             # Only add if we got data
             if not aq_by_city.empty:
                 aq_by_city['city'] = city

@@ -181,7 +181,7 @@ class OpenWeatherClient:
             print(f"Processing {city}...")
             print(f"{'='*50}")
 
-            cache_dir = f"{cache_base_dir}/{city}"
+            cache_dir = f"{cache_base_dir}/{city}/weather"
 
             # Fetch and cache data
             self.fetch_city_data(
@@ -195,19 +195,19 @@ class OpenWeatherClient:
 
             # Load cached data
             df = self.merge_cached_data(cache_dir)
-            
+
             if not df.empty:
                 df["city"] = city
                 all_dataframes.append(df)
-        
+
         # Combine all cities
         if not all_dataframes:
             print("⚠️ No data fetched for any city")
             return pd.DataFrame()
-        
+
         all_cities_df = pd.concat(all_dataframes, ignore_index=True)
-        
+
         # Save to disk
         save_data_local(all_cities_df, output_path)
-        
+
         return all_cities_df
