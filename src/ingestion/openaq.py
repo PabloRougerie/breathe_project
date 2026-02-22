@@ -94,6 +94,7 @@ class OpenAQClient:
                 if sensor["parameter"]["id"] == 2:  # PM2.5
                     sensor_ids.append(sensor["id"])
 
+        print(f"  PM2.5 sensors found: {len(sensor_ids)}")
         return sensor_ids
 
     def fetch_one_sensor_data(self, sensor_id, start_date, end_date, cache_dir):

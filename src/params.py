@@ -72,8 +72,6 @@ CITIES = {
     "London": {"lat": 51.5045, "lon": -0.1363},         # St James, Central London # Near Largo da Carioca
     "Berlin": {"lat": 52.4990, "lon": 13.4437},         # Near Görlitzer Park
     "Rome": {"lat": 41.9028, "lon": 12.4964},
-    "Barcelona": {"lat": 41.3954, "lon": 2.1161},       # Near Real Club de Polo
-    "Mumbai": {"lat": 19.0728, "lon": 72.8681},         # Near Kalina Kurla Road
-    "Mexico City": {"lat": 19.3700, "lon": -99.1560},   # Avenida Municipio Libre, Colonia Letrán Valle
+    "Barcelona": {"lat": 41.3954, "lon": 2.1161},       # Near Real Club de Polo         # Near Kalina Kurla Road   # Avenida Municipio Libre, Colonia Letrán Valle
     "Santiago": {"lat": -33.4192, "lon": -70.7417}      # Cerro Navia
 }
