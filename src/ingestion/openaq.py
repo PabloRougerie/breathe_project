@@ -226,7 +226,7 @@ class OpenAQClient:
         return all_measurements
 
     def get_data(self, cities, start_date, end_date, start_project_date,
-                 end_project_date, output_path="../data/raw/aq_data.csv"):
+                 end_project_date, output_path="../data/raw/airqual_eda.csv"):
         """
         Get PM2.5 measurements from OpenAQ API for multiple cities.
 
@@ -236,7 +236,7 @@ class OpenAQClient:
             end_date (str): Data fetch end date (YYYY-MM-DD)
             start_project_date (str): Project start date for sensor filtering (YYYY-MM-DD)
             end_project_date (str): Project end date for sensor filtering (YYYY-MM-DD)
-            output_path (str): Output CSV path (default: "../../data/raw/aq_data.csv")
+            output_path (str): Output CSV path (default: "../data/raw/airqual_eda.csv")
 
         Returns:
             pd.DataFrame: Combined PM2.5 measurements for all cities
