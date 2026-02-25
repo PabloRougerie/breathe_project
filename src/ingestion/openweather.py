@@ -24,7 +24,7 @@ class OpenWeatherClient:
         ...     cities=cities,
         ...     start_date="2023-01-01",
         ...     end_date="2023-12-31",
-        ...     output_path="data/raw/weather_eda.csv"
+        ...     output_path="../data/raw/weather.csv"
         ... )
     """
 
@@ -159,7 +159,7 @@ class OpenWeatherClient:
 
 
     def get_all_data(self, cities, start_date, end_date, cache_base_dir="../data/cache",
-                     output_path="../data/raw/weather_eda.csv"):
+                     output_path="../data/raw/weather.csv"):
         """
         Fetch weather data for multiple cities and save to CSV.
 
@@ -168,7 +168,7 @@ class OpenWeatherClient:
             start_date (str): Start date (YYYY-MM-DD)
             end_date (str): End date (YYYY-MM-DD)
             cache_base_dir (str): Base directory for cache (default: "../data/cache")
-            output_path (str): Output CSV path (default: "../data/raw/weather_eda.csv")
+            output_path (str): Output CSV path (default: "../data/raw/weather.csv")
 
         Returns:
             pd.DataFrame: Combined weather data for all cities

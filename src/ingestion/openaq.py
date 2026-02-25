@@ -4,7 +4,7 @@ import os
 import time
 from datetime import datetime
 import json
-from src.ingestion.utils import save_data_local
+from src.utils import save_data_local
 
 
 class OpenAQClient:
@@ -17,7 +17,7 @@ class OpenAQClient:
 
     """
 
-    def __init__(self, api_key=None, radius=5000, max_retry=3, cache_base_dir="../data/cache", min_coverage=0.75):
+    def __init__(self, api_key=None, radius=7000, max_retry=3, cache_base_dir="../data/cache", min_coverage=0.75):
         self.api_key = api_key or os.getenv("API_AQ")
         self.radius = radius
         self.base_url = "https://api.openaq.org/v3"
@@ -175,6 +175,7 @@ class OpenAQClient:
             sensor_ids (list): List of sensor IDs to fetch
             start_date (str): Start date (YYYY-MM-DD)
             end_date (str): End date (YYYY-MM-DD)
+            cache_dir (str): Directory to cache sensor data
 
         Returns:
             pd.DataFrame: Aggregated measurements from all sensors
@@ -226,7 +227,7 @@ class OpenAQClient:
         return all_measurements
 
     def get_data(self, cities, start_date, end_date, start_project_date,
-                 end_project_date, output_path="../data/raw/airqual_eda.csv"):
+                 end_project_date, output_path="../data/raw/airqual.csv"):
         """
         Get PM2.5 measurements from OpenAQ API for multiple cities.
 
@@ -236,7 +237,7 @@ class OpenAQClient:
             end_date (str): Data fetch end date (YYYY-MM-DD)
             start_project_date (str): Project start date for sensor filtering (YYYY-MM-DD)
             end_project_date (str): Project end date for sensor filtering (YYYY-MM-DD)
-            output_path (str): Output CSV path (default: "../data/raw/airqual_eda.csv")
+            output_path (str): Output CSV path (default: "../data/raw/airqual.csv")
 
         Returns:
             pd.DataFrame: Combined PM2.5 measurements for all cities
