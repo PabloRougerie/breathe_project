@@ -6,7 +6,7 @@ import time
 import os
 from tqdm.auto import tqdm
 from pathlib import Path
-from src.ingestion.utils import save_data_local
+from src.utils import save_data_local
 
 
 class OpenWeatherClient:
