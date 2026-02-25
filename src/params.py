@@ -57,17 +57,26 @@ API_AQ = os.environ.get("API_AQ")
 GAR_REPO = os.environ.get("GAR_REPO")
 
 # ========== PROJECT DATES ==========
-START_TRAIN_DATE_STR= os.environ.get("START_TRAIN_DATE_STR")
-START_PROJECT_DATE_STR= os.environ.get("START_PROJECT_DATE_STR")
-END_TRAIN_DATE_STR= os.environ.get("END_TRAIN_DATE_STR")
-END_PROJECT_DATE_STR= os.environ.get("END_PROJECT_DATE_STR")
+START_TRAIN_DATE_STR = os.environ.get("START_TRAIN_DATE_STR")
+START_PROJECT_DATE_STR = os.environ.get("START_PROJECT_DATE_STR")
+END_TRAIN_DATE_STR = os.environ.get("END_TRAIN_DATE_STR")
+END_PROJECT_DATE_STR = os.environ.get("END_PROJECT_DATE_STR")
 
 
+# ========== Cities ==========
 CITIES = {
-    "Paris": {'lat': 48.8622, 'lon': 2.3470},           # Les Halles
-    "Lyon": {'lat': 45.7267, 'lon': 4.8275},            # Gerland
-    "New York": {"lat": 40.8259, "lon": -73.9508},      # St Nicholas Terrace, Manhattanville
-    "London": {"lat": 51.5045, "lon": -0.1363},         # St James, Central London # Near Largo da Carioca
-    "Berlin": {"lat": 52.4990, "lon": 13.4437},         # Near Görlitzer Park
-    "Rome": {"lat": 41.9028, "lon": 12.4964}
+    "Paris": {"lat": 48.8622, "lon": 2.3470},        # Les Halles
+    "Lyon": {"lat": 45.7267, "lon": 4.8275},          # Gerland
+    "New York": {"lat": 40.8259, "lon": -73.9508},    # St Nicholas Terrace, Manhattanville
+    "London": {"lat": 51.5045, "lon": -0.1363},       # St James, Central London
+    "Berlin": {"lat": 52.4990, "lon": 13.4437},       # Near Görlitzer Park
+    "Rome": {"lat": 41.9028, "lon": 12.4964},
 }
+
+
+# ========== Preprocessing constants ==========
+MAX_GAP = int(os.environ.get("MAX_GAP", 30))
+MAX_Q = float(os.environ.get("MAX_Q", 10.0))
+MIN_COVERAGE_PCT = int(os.environ.get("MIN_COVERAGE_PCT", 70))
+MIN_BAD_MONTH_PCT = float(os.environ.get("MIN_BAD_MONTH_PCT", 0.20))
+
