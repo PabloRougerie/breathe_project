@@ -94,3 +94,64 @@ def filter_sensors(df, max_gap, max_q, min_coverage_pct, min_bad_month_pct):
     n_removed = df["sensor_id"].nunique() - df_filtered["sensor_id"].nunique()
     print(f"✅ filter_sensors: {n_removed} sensor(s) removed, {df_filtered['sensor_id'].nunique()} remaining")
     return df_filtered
+
+
+def filter_columns(df, col_to_keep=None, col_to_remove=None):
+    """
+    Select or drop columns from a DataFrame.
+
+    At least one of col_to_keep or col_to_remove must be provided.
+    Both can be passed simultaneously: col_to_keep is applied first,
+    then col_to_remove — but no column can appear in both.
+
+    Args:
+        df (pd.DataFrame): Input DataFrame.
+        col_to_keep (list[str], optional): Columns to keep.
+        col_to_remove (list[str], optional): Columns to drop.
+
+    Returns:
+        pd.DataFrame: DataFrame with selected/dropped columns.
+    """
+    if not (col_to_keep or col_to_remove):
+        raise ValueError("At least one of col_to_keep or col_to_remove must be provided")
+
+    overlap= set(col_to_keep or []) & set(col_to_remove or [])
+    df_filtered = df.copy()
+
+    if overlap:
+        raise ValueError(f"Columns cannot be in both col_to_keep and col_to_remove: {overlap}")
+
+    df_filtered = df.copy()
+
+    if col_to_keep:
+        df_filtered = df_filtered[col_to_keep]
+    if col_to_remove:
+        df_filtered = df_filtered.drop(columns=col_to_remove)
+
+    return df_filtered
+
+
+
+def average_sensors(df, col_to_average= "pm25_avg"):
+    """
+    Average PM2.5 values across sensors for each city/date.
+
+    After sensor filtering, multiple sensors may still exist per city.
+    This produces one row per city/date by taking the mean of all pm25 columns.
+
+    Args:
+        df (pd.DataFrame): Filtered airqual DataFrame.
+
+    Returns:
+        pd.DataFrame: One row per (city, date) with averaged pm25 columns.
+    """
+
+
+    df_avg = (
+        df.groupby(["city", "date"])[col_to_average]
+        .mean()
+        .reset_index()
+    )
+
+    print(f"✅ Sensors averaged — {df_avg.shape[0]} rows (city × date)")
+    return df_avg
