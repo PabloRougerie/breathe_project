@@ -96,39 +96,32 @@ def filter_sensors(df, max_gap, max_q, min_coverage_pct, min_bad_month_pct):
     return df_filtered
 
 
-def filter_columns(df, col_to_keep=None, col_to_remove=None):
+def clean_neg_values(df, col_to_clean="pm25_avg"):
     """
-    Select or drop columns from a DataFrame.
-
-    At least one of col_to_keep or col_to_remove must be provided.
-    Both can be passed simultaneously: col_to_keep is applied first,
-    then col_to_remove — but no column can appear in both.
+    Remove rows with negative or zero values in the target column.
 
     Args:
         df (pd.DataFrame): Input DataFrame.
-        col_to_keep (list[str], optional): Columns to keep.
-        col_to_remove (list[str], optional): Columns to drop.
+        col_to_clean (str): Column to check for negative/zero values. Defaults to 'pm25_avg'.
 
     Returns:
-        pd.DataFrame: DataFrame with selected/dropped columns.
+        pd.DataFrame: Cleaned DataFrame with non-positive values removed.
     """
-    if not (col_to_keep or col_to_remove):
-        raise ValueError("At least one of col_to_keep or col_to_remove must be provided")
+    if col_to_clean not in df.columns:
+        raise KeyError(f"❌ Column '{col_to_clean}' not found in DataFrame")
 
-    overlap= set(col_to_keep or []) & set(col_to_remove or [])
-    df_filtered = df.copy()
+    total_values = len(df)
+    neg_values_before = (df[col_to_clean] <= 0).sum()
+    print(f"⚠️  {neg_values_before} aberrant (negative or zero) values found ({neg_values_before / total_values * 100:.2f}%)")
 
-    if overlap:
-        raise ValueError(f"Columns cannot be in both col_to_keep and col_to_remove: {overlap}")
+    df_clean = df[df[col_to_clean] > 0].copy()
 
-    df_filtered = df.copy()
-
-    if col_to_keep:
-        df_filtered = df_filtered[col_to_keep]
-    if col_to_remove:
-        df_filtered = df_filtered.drop(columns=col_to_remove)
-
-    return df_filtered
+    neg_values_after = (df_clean[col_to_clean] <= 0).sum()
+    if neg_values_after == 0:
+        print(f"✅ All negative values removed — {len(df_clean)} rows remaining")
+        return df_clean
+    else:
+        raise Exception(f"❌ Not all negative values removed. {neg_values_after} remaining")
 
 
 
@@ -155,3 +148,37 @@ def average_sensors(df, col_to_average= "pm25_avg"):
 
     print(f"✅ Sensors averaged — {df_avg.shape[0]} rows (city × date)")
     return df_avg
+
+
+def single_gaps_imputer():
+    """ interpolate one day gap"""
+    pass
+
+def target_transform():
+    """ log transform"""
+    pass
+
+def month_encoding():
+    """ encode month as sin cos"""
+    pass
+
+def day_encoding():
+
+    """ encode days of week and add 'is weekend' feature """
+    pass
+
+def generate_lag_features():
+
+    """ general fonction that shift a given column by a given number of steps.
+    necessary for target generation, lag feature generation, month and day feature tomorrow"""
+
+def average_feature_generation():
+    """generate avg at lag 13,14,15 counting from target day """
+    pass
+
+def std_feature_generation():
+    """ genrated std value for the week counting from target day"""
+    pass
+
+def feature_engineering():
+    """ wrapper function calling all the feature engineering functions"""
