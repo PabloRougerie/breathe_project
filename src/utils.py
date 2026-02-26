@@ -53,35 +53,46 @@ def load_data_local(filepath, source: str):
     return df
 
 
-def clean_neg_values(df, col_to_clean="pm25_avg"):
+
+def filter_columns(df, col_to_keep=None, col_to_remove=None):
     """
-    Remove rows with negative or zero values in the target column.
+    Select or drop columns from a DataFrame.
+
+    At least one of col_to_keep or col_to_remove must be provided.
+    Both can be passed simultaneously: col_to_keep is applied first,
+    then col_to_remove — but no column can appear in both.
 
     Args:
         df (pd.DataFrame): Input DataFrame.
-        col_to_clean (str): Column to check for negative/zero values. Defaults to 'pm25_avg'.
+        col_to_keep (list[str], optional): Columns to keep.
+        col_to_remove (list[str], optional): Columns to drop.
 
     Returns:
-        pd.DataFrame: Cleaned DataFrame with non-positive values removed.
+        pd.DataFrame: DataFrame with selected/dropped columns.
     """
-    if col_to_clean not in df.columns:
-        raise KeyError(f"❌ Column '{col_to_clean}' not found in DataFrame")
+    if not (col_to_keep or col_to_remove):
+        raise ValueError("At least one of col_to_keep or col_to_remove must be provided")
 
-    total_values = len(df)
-    neg_values_before = (df[col_to_clean] <= 0).sum()
-    print(f"⚠️  {neg_values_before} aberrant (negative or zero) values found ({neg_values_before / total_values * 100:.2f}%)")
+    overlap= set(col_to_keep or []) & set(col_to_remove or [])
+    df_filtered = df.copy()
 
-    df_clean = df[df[col_to_clean] > 0].copy()
+    if overlap:
+        raise ValueError(f"Columns cannot be in both col_to_keep and col_to_remove: {overlap}")
 
-    neg_values_after = (df_clean[col_to_clean] <= 0).sum()
-    if neg_values_after == 0:
-        print(f"✅ All negative values removed — {len(df_clean)} rows remaining")
-        return df_clean
-    else:
-        raise Exception(f"❌ Not all negative values removed. {neg_values_after} remaining")
+    df_filtered = df.copy()
+
+    if col_to_keep:
+        df_filtered = df_filtered[col_to_keep]
+    if col_to_remove:
+        df_filtered = df_filtered.drop(columns=col_to_remove)
+
+    return df_filtered
 
 
-def merge_source_df(df_airqual, df_weather):
+def merge_source_df(df_airqual, df_weather, col_order = ["city", "date", "pm25_avg",
+                                                         "temp_min", "temp_max", "temp_avg",
+                                                        "cloud_cover", "humidity", "precipitation",
+                                                        "pressure", "wind_speed", "wind_direction"]):
     """
     Merge air quality and weather DataFrames on date and city.
 
@@ -99,19 +110,20 @@ def merge_source_df(df_airqual, df_weather):
     max_gap = df_weather.groupby("city")["date"].diff().dt.days.max()
 
     if max_gap > 1:
-        raise Exception("⚠️ Missing days detected in weather dataframe. Please check")
+        raise ValueError("⚠️ Missing days detected in weather dataframe. Please check")
 
     df_merged = pd.merge(left=df_weather, right=df_airqual, on=["date", "city"], how="left")
 
-    new_order = ["city", "sensor_id", "date", "pm25_avg", "pm25_min", "pm25_q25", "pm25_median",
-                 "pm25_q75", "pm25_max", "coverage", "temp_min", "temp_max", "temp_avg",
-                 "cloud_cover", "humidity", "precipitation", "pressure", "wind_speed", "wind_direction"]
 
+    if set(col_order) != set(df_merged.columns):
+        missing = set(col_order) - set(df_merged.columns)
+        remaining = set(df_merged.columns) - set(col_order)
+        raise Exception(f"❌ col mismatch: absent in merged df: {missing}, remaining and not reordered: {remaining}")
 
-    df_merged = df_merged[new_order]
+    df_merged = df_merged[col_order]
 
     if df_merged.empty:
-        raise Exception("❌ Merged DataFrame is empty")
+        raise ValueError("❌ Merged DataFrame is empty")
 
     matched = df_merged["pm25_avg"].notna().sum()
     total = len(df_merged)
