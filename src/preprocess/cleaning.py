@@ -167,3 +167,16 @@ def single_gaps_imputer(df, limit= 1):
     after = df["pm25_avg"].isna().sum()
     print(f"✅ Imputing successful.{limit}-day gaps before: {before}. After: {after}")
     return df
+
+
+def drop_na(df):
+    """Drop rows with NaN values in any feature or target column."""
+    before = len(df)
+    df = df.dropna()
+    after = len(df)
+    print(f"✅ dropna: {before - after} rows removed, {after} remaining")
+    return df
+
+def drop_preprocess_cols(df, cols_to_drop=["date", "pm25_avg"]):
+    """Drop columns used during preprocessing but not needed for modeling."""
+    return df.drop(columns=cols_to_drop)
