@@ -80,3 +80,14 @@ MAX_Q = float(os.environ.get("MAX_Q", 10.0))
 MIN_COVERAGE_PCT = int(os.environ.get("MIN_COVERAGE_PCT", 70))
 MIN_BAD_MONTH_PCT = float(os.environ.get("MIN_BAD_MONTH_PCT", 0.20))
 
+CUSTOM_SHIFTS = {"lag_1": ("pm25_avg", 0),
+                 "lag_2": ("pm25_avg", 1),
+                 "lag_3": ("pm25_avg", 2),
+                 "lag_7": ("pm25_avg", 6)
+
+
+}
+
+ALL_LAGS_14_SHIFTS = {f"lag_{k + 1}" : ("pm25_avg", k) for k in range(14)}
+
+ALL_LAGS_21_SHIFTS = {f"lag_{k + 1}" : ("pm25_avg", k) for k in range(21)}
