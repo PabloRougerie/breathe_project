@@ -1,9 +1,7 @@
 
 import pandas as pd
 
-def single_gaps_imputer():
-    """ interpolate one day gap"""
-    pass
+
 
 def target_transform():
     """ log transform"""

@@ -148,3 +148,22 @@ def average_sensors(df, col_to_average= "pm25_avg"):
 
     print(f"✅ Sensors averaged — {df_avg.shape[0]} rows (city × date)")
     return df_avg
+
+
+def single_gaps_imputer(df, limit= 1):
+    """ interpolate one day gap"""
+
+    missing = {"city", "date", "pm25_avg"} - set(df.columns)
+    if missing:
+        raise KeyError(f"column(s) {missing} missing from dataframe")
+
+    df = df.sort_values(by= ["city", "date"])
+    before = df["pm25_avg"].isna().sum()
+    print(f"total nan before: {df["pm25_avg"].isna().sum()}")
+    df["pm25_avg"] = df.groupby("city")["pm25_avg"].transform(lambda x: x.interpolate(method= "linear",
+                                                                                      axis= 0,
+                                                                                      limit= limit,                                                                                    limit_area= "inside"
+                                                                ))
+    after = df["pm25_avg"].isna().sum()
+    print(f"✅ Imputing successful.{limit}-day gaps before: {before}. After: {after}")
+    return df
