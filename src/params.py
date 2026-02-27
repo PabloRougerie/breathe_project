@@ -75,10 +75,13 @@ CITIES = {
 
 
 # ========== Preprocessing constants ==========
-MAX_GAP = int(os.environ.get("MAX_GAP", 30))
-MAX_Q = float(os.environ.get("MAX_Q", 10.0))
-MIN_COVERAGE_PCT = int(os.environ.get("MIN_COVERAGE_PCT", 70))
-MIN_BAD_MONTH_PCT = float(os.environ.get("MIN_BAD_MONTH_PCT", 0.20))
+MAX_GAP = 30
+MAX_Q = 10.0
+MIN_COVERAGE_PCT = 70
+MIN_BAD_MONTH_PCT = 0.20
+HORIZON = 1
+LIMIT = 1
+DEFAULT_APPROACH = "custom"
 
 CUSTOM_SHIFTS = {"lag_1": ("pm25_avg", 0),
                  "lag_2": ("pm25_avg", 1),
