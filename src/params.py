@@ -57,21 +57,39 @@ API_AQ = os.environ.get("API_AQ")
 GAR_REPO = os.environ.get("GAR_REPO")
 
 # ========== PROJECT DATES ==========
-START_TRAIN_DATE_STR= os.environ.get("START_TRAIN_DATE_STR")
-START_PROJECT_DATE_STR= os.environ.get("START_PROJECT_DATE_STR")
-END_TRAIN_DATE_STR= os.environ.get("END_TRAIN_DATE_STR")
-END_PROJECT_DATE_STR= os.environ.get("END_PROJECT_DATE_STR")
+START_TRAIN_DATE_STR = os.environ.get("START_TRAIN_DATE_STR")
+START_PROJECT_DATE_STR = os.environ.get("START_PROJECT_DATE_STR")
+END_TRAIN_DATE_STR = os.environ.get("END_TRAIN_DATE_STR")
+END_PROJECT_DATE_STR = os.environ.get("END_PROJECT_DATE_STR")
 
 
+# ========== Cities ==========
 CITIES = {
-    "Paris": {'lat': 48.8622, 'lon': 2.3470},           # Les Halles
-    "Lyon": {'lat': 45.7267, 'lon': 4.8275},            # Gerland
-    "New York": {"lat": 40.8259, "lon": -73.9508},      # St Nicholas Terrace, Manhattanville
-    "Los Angeles": {"lat": 34.0522, "lon": -118.2437},  # Original coordinates
-    "Delhi": {"lat": 28.6070, "lon": 77.2456},          # Near Sher Shah Road
-    "London": {"lat": 51.5045, "lon": -0.1363},         # St James, Central London # Near Largo da Carioca
-    "Berlin": {"lat": 52.4990, "lon": 13.4437},         # Near Görlitzer Park
+    "Paris": {"lat": 48.8622, "lon": 2.3470},        # Les Halles
+    "Lyon": {"lat": 45.7267, "lon": 4.8275},          # Gerland
+    "New York": {"lat": 40.8259, "lon": -73.9508},    # St Nicholas Terrace, Manhattanville
+    "London": {"lat": 51.5045, "lon": -0.1363},       # St James, Central London
+    "Berlin": {"lat": 52.4990, "lon": 13.4437},       # Near Görlitzer Park
     "Rome": {"lat": 41.9028, "lon": 12.4964},
-    "Barcelona": {"lat": 41.3954, "lon": 2.1161},       # Near Real Club de Polo         # Near Kalina Kurla Road   # Avenida Municipio Libre, Colonia Letrán Valle
-    "Santiago": {"lat": -33.4192, "lon": -70.7417}      # Cerro Navia
 }
+
+
+# ========== Preprocessing constants ==========
+MAX_GAP = 30
+MAX_Q = 10.0
+MIN_COVERAGE_PCT = 70
+MIN_BAD_MONTH_PCT = 0.20
+HORIZON = 1
+LIMIT = 1
+DEFAULT_APPROACH = "custom"
+
+CUSTOM_SHIFTS = {"lag_1": ("pm25_avg", 0),
+                 "lag_2": ("pm25_avg", 1),
+                 "lag_3": ("pm25_avg", 2),
+                 "lag_7": ("pm25_avg", 6)
+
+
+}
+
+ALL_LAGS_14_SHIFTS = {f"lag_{k + 1}" : ("pm25_avg", k) for k in range(14)}
+ALL_LAGS_21_SHIFTS = {f"lag_{k + 1}" : ("pm25_avg", k) for k in range(21)}

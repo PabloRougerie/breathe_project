@@ -6,7 +6,7 @@ import time
 import os
 from tqdm.auto import tqdm
 from pathlib import Path
-from src.ingestion.utils import save_data_local
+from src.utils import save_data_local
 
 
 class OpenWeatherClient:
@@ -24,7 +24,7 @@ class OpenWeatherClient:
         ...     cities=cities,
         ...     start_date="2023-01-01",
         ...     end_date="2023-12-31",
-        ...     output_path="data/raw/weather.csv"
+        ...     output_path="../data/raw/weather.csv"
         ... )
     """
 
