@@ -90,7 +90,7 @@ def filter_columns(df, col_to_keep=None, col_to_remove=None):
 
 
 def merge_source_df(df_airqual, df_weather, col_order = ["city", "date", "pm25_avg",
-                                                         "temp_min", "temp_max", "temp_avg",
+                                                         "temp_min", "temp_max",
                                                         "cloud_cover", "humidity", "precipitation",
                                                         "pressure", "wind_speed", "wind_direction"]):
     """

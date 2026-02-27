@@ -65,6 +65,9 @@ def preprocessing_pipeline(airqual_df, weather_df, config: PreprocessConfig = Pr
     #------------------
 
     data = drop_na(data)
-    data = drop_preprocess_cols(data, cols_to_drop= config.col_to_drops)
+    data = drop_preprocess_cols(data)
+
+
+    print("✅ raw data processed susscessfully!")
 
     return data

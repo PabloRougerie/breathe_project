@@ -92,5 +92,4 @@ CUSTOM_SHIFTS = {"lag_1": ("pm25_avg", 0),
 }
 
 ALL_LAGS_14_SHIFTS = {f"lag_{k + 1}" : ("pm25_avg", k) for k in range(14)}
-
 ALL_LAGS_21_SHIFTS = {f"lag_{k + 1}" : ("pm25_avg", k) for k in range(21)}
