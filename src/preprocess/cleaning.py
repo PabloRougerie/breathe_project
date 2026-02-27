@@ -177,6 +177,6 @@ def drop_na(df):
     print(f"✅ dropna: {before - after} rows removed, {after} remaining")
     return df
 
-def drop_preprocess_cols(df, cols_to_drop=["date", "pm25_avg"]):
+def drop_preprocess_cols(df, cols_to_drop=["pm25_avg"]):
     """Drop columns used during preprocessing but not needed for modeling."""
     return df.drop(columns=cols_to_drop)
