@@ -93,3 +93,15 @@ CUSTOM_SHIFTS = {"lag_1": ("pm25_avg", 0),
 
 ALL_LAGS_14_SHIFTS = {f"lag_{k + 1}" : ("pm25_avg", k) for k in range(14)}
 ALL_LAGS_21_SHIFTS = {f"lag_{k + 1}" : ("pm25_avg", k) for k in range(21)}
+
+
+SELECTED_FEATURES = ['lag_1',
+ 'city',
+ 'precipitation',
+ 'temp_max',
+ 'lag_avg_14',
+ 'wind_speed',
+ 'pressure',
+ 'wind_direction',
+ 'lag_3',
+ 'humidity']
