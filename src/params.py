@@ -120,3 +120,6 @@ BEST_PARAMS = {
   "random_state": 273,
   "verbose": -1
 }
+
+DRIFT_THRESHOLD = 0.25
+IMPROVEMENT_THRESHOLD = 0.05
