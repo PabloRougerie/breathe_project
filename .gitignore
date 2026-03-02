@@ -18,6 +18,7 @@ dist/
 
 # Jupyter
 .ipynb_checkpoints/
+notebooks/catboost_info/
 
 # Data (ne pas commit les données)
 data/
