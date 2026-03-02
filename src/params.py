@@ -105,3 +105,18 @@ SELECTED_FEATURES = ['lag_1',
  'wind_direction',
  'lag_3',
  'humidity']
+
+BEST_PARAMS = {
+  "learning_rate": 0.039215086373645916,
+  "n_estimators": 365,
+  "num_leaves": 192,
+  "max_depth": 3,
+  "min_child_samples": 14,
+  "reg_alpha": 1.0104102789955898,
+  "reg_lambda": 0.00016444594773119733,
+  "subsample": 0.5287082281151364,
+  "colsample_bytree": 0.9863936278891989,
+  "subsample_freq": 1,
+  "random_state": 273,
+  "verbose": -1
+}
