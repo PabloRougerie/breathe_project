@@ -8,13 +8,6 @@ import numpy as np
 from sklearn.metrics import root_mean_squared_log_error, root_mean_squared_error
 
 
-def baseline_score(X, y):
-
-    y_true = y
-    y_pred = X["lag_1"]
-    score = root_mean_squared_log_error(np.expm1(y_true), y_pred)
-    return score
-
 def baseline_calculation(X,y,baseline):
 
     X = X.sort_values(by= "date", ascending= True)
