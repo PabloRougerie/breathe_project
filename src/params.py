@@ -20,6 +20,8 @@ BQ_DATASET_PROCESSED = os.environ.get("BQ_DATASET_PROCESSED")
 BUCKET_NAME = os.environ.get("BUCKET_NAME")
 
 # ========== ML Logic Configuration ==========
+MLFLOW_TRACKING_URI = os.environ.get("MLFLOW_TRACKING_URI")
+MLFLOW_MODEL_NAME = os.environ.get("MLFLOW_MODEL_NAME")
 MODEL_SAVE = os.environ.get("MODEL_SAVE")
 EVALUATION_START_DATE = os.environ.get("EVALUATION_START_DATE")
 USE_CACHE = os.environ.get("USE_CACHE")
