@@ -4,6 +4,7 @@ from mlflow.tracking import MlflowClient
 from datetime import datetime
 from src.params import *
 
+
 def load_model(mlflow_client, alias= "champion"):
 
     # get model metadata
@@ -15,6 +16,7 @@ def load_model(mlflow_client, alias= "champion"):
                       "model_date": time}
 
     model = mlflow.sklearn.load_model(f"models:/{MLFLOW_MODEL_NAME}@{alias}")
+
 
     return model, model_metadata
 
@@ -29,10 +31,12 @@ def save_model(model):
         registered_model_name=MLFLOW_MODEL_NAME
     )
 
-    #get version of logged model
-    version = result.registered_model_version
+    #get model metadata
+    model_metadata = {"model_version": result.registered_model_version,
+                      "model_run_id": result.run_id,
+                      "model_log_date": result.utc_time_created}
 
-    return version
+    return model_metadata
 
 def register_challenger(client, version):
 
