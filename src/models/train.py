@@ -21,17 +21,7 @@ def train_model(model, X, y):
     model.fit(X,y)
     fit_time = time.time() - t0
 
-    metadata= {
-        "n_rows": len(X),
-        "n_features": len(X.columns),
-        "features_name": X.columns.tolist(),
-        "fit_time_seconds": round(fit_time,2)
-    }
-
-    return model, metadata
+    fit_time= round(fit_time,2)
 
 
-
-    # 2. .fit() on X, y
-    # 3. return fitted model
-    # Optional: create a dict of metadata to be logged later on when used with mlflow decorator?
+    return model, fit_time

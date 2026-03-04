@@ -1,4 +1,5 @@
 import mlflow
+from datetime import datetime
 from src.params import *
 from src.models.train import *
 from src.models.evaluate import *
@@ -9,64 +10,97 @@ def setup_mlflow():
     mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
     mlflow.set_experiment(MLFLOW_EXPERIMENT_NAME)
 
-def run_training(X,y):
 
-    """ instantiate and train and save new model"""
+def run_training(X, y, dataset_metadata):
+    """Instantiate, train, save and register a new model as 'challenger'.
 
-    # close all existing runs
+    Logs to MLflow:
+      params   — hyperparams (BEST_PARAMS), model_version, date_start, date_end
+      artifact — train_metadata.json: fit_time_seconds, n_rows, n_features, list_features
+    Returns:
+      trained_model, model_version (str)
+    """
     mlflow.end_run()
-    #open new run
     with mlflow.start_run():
 
         client = MlflowClient()
-        #instantiate model
+
         print("📦 Instantiating new model...")
         model = initiate_model()
 
-        #train model
         print(f"⚙️ Fitting new model on {len(X)} lines...")
-        trained_model, train_metadata = train_model(model, X, y)
+        trained_model, fit_time = train_model(model, X, y)  # train_metadata: fit_time_seconds
 
-        #log params and model/dataset metadata
+        # Filterable params
         mlflow.log_params(BEST_PARAMS)
-        mlflow.log_dict(train_metadata,"train_metadata.json")
 
+
+        # Single artifact: fit context + dataset stats
+        train_artifact = {
+            "fit_time": fit_time,  # fit_time_seconds
+            **{k: v for k, v in dataset_metadata.items() if k not in ("date_start", "date_end")}
+            # n_rows, n_features, list_features
+        }
+        mlflow.log_dict(train_artifact, "train_metadata.json")
 
         #save model and set it to "challenger" alias
         print("saving...")
-        model_metadata = save_model(trained_model)
-        print(f"Registring new model v{model_metadata["model_version"]} as 'challenger'...")
-        register_challenger(client, version= model_metadata["model_version"])
-        print(f"✅ Model v{model_metadata["model_version"]} trained and registered")
+        model_version = save_model(trained_model)
 
-        return trained_model, model_metadata
-
-
-
+        mlflow.log_params({
+            "date_start": dataset_metadata["date_start"],  # actual start date after preprocessing
+            "date_end":   dataset_metadata["date_end"],# actual end date after preprocessing
+            "model_version": model_version
+        })
 
 
-def run_evaluating(X_val, y_true, model= None, model_metadata= None, alias= "champion", data_source= "test_set"):
-    """ load and evaluate existing model"""
+        print(f"Registering new model v{model_version} as 'challenger'...")
+        register_challenger(client, version=model_version)
+        print(f"✅ Model v{model_version} trained and registered")
 
-    if data_source not in ("test_set", "fresh_batch"):
-        raise ValueError(f"❌ data_source must be 'test_set' or 'fresh_batch', got {data_source} instead")
+        return trained_model, model_version
 
-    #close existing run
+
+
+
+
+def run_evaluating(X_val, y_true, dataset_metadata, model=None, model_version=None, alias="champion", eval_mode="test_set"):
+    """Load and evaluate an existing model.
+
+    Logs to MLflow:
+      params  — eval_date, eval_mode, model_version, model_alias, date_start, date_end
+      metric  — test_rmse (eval_mode='test_set') or fresh_batch_rmse (eval_mode='fresh_batch')
+    Args:
+      model, model_version: pass when chaining with run_training (avoids registry round-trip)
+      alias: used when loading from registry (ignored if model is passed)
+      eval_mode: 'test_set' (periodic benchmark) or 'fresh_batch' (new production data)
+    Returns:
+      score (float)
+    """
+    if eval_mode not in ("test_set", "fresh_batch"):
+        raise ValueError(f"❌ eval_mode must be 'test_set' or 'fresh_batch', got '{eval_mode}'")
+
     with mlflow.start_run():
 
-        # check if model passed as argument (when chained with model train for instance)
+        # Load from registry if no model passed (standalone eval, not chained after training)
         if model is None:
-            print(f"no model passed. Loading {alias} model from registry")
+            print(f"No model passed. Loading '{alias}' model from registry...")
             client = MlflowClient()
-            # load model
-            model, model_metadata = load_model(client, alias= alias)
+            model, model_version = load_model(client, alias=alias)
 
-        #eval model
         score = evaluate(model, X_val, y_true)
-        if data_source =="test_set":
-            mlflow.log_metric("test_rmse", score)
-        else:
-            mlflow.log_metric("fresh_batch_rmse", score)
 
+        # All filterable params in one call
+        mlflow.log_params({
+            "eval_date":     str(datetime.now().date()),
+            "eval_mode":     eval_mode,
+            "model_version": model_version,
+            "model_alias":   alias,
+            "date_start":    dataset_metadata["date_start"],  # actual start date after preprocessing
+            "date_end":      dataset_metadata["date_end"],    # actual end date after preprocessing
+        })
+
+        metric_name = "rmse"
+        mlflow.log_metric(metric_name, score)
 
     return score
