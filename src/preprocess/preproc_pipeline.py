@@ -59,15 +59,26 @@ def preprocessing_pipeline(airqual_df, weather_df, config: PreprocessConfig = Pr
 
     data = feature_engineering(data, approach= config.approach)
 
-
-        #------------------
+    #------------------
     # FINAL CLEANING
     #------------------
 
     data = drop_na(data)
     data = drop_preprocess_cols(data)
 
+    #extract metadata for logging
+    dataset_metadata = {
+        "date_start": str(data["date"].min()),
+        "date_end": str(data["date"].max()),
+        "n_rows": len(data),
+        "n_features": len(data.columns) - 2,
+        "list_features": [feat for feat in data.columns if feat not in ["date", "target"]]
+    }
 
-    print("✅ raw data processed susscessfully!")
+    #split data
+    X = data.drop(columns = ["target", "date"])
+    y = data["target"]
 
-    return data
+    print("✅ raw data processed successfully!")
+
+    return dataset_metadata, X, y
