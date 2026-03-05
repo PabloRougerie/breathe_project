@@ -39,13 +39,14 @@ def promote_challenger(client):
     # test if there is a champion already
     try:
         version_champ = client.get_model_version_by_alias(name= MLFLOW_MODEL_NAME, alias= "champion").version
-        # if exists, tag it to "archived"
         client.set_model_version_tag(name= MLFLOW_MODEL_NAME, version= version_champ, key= "status", value= "archived")
+        print(f"   archived previous champion v{version_champ}")
 
-    except mlflow.exceptions.MlflowException: #if mlflow throws exception
-        pass #if (first promotion) this part is skipped.
+    except mlflow.exceptions.MlflowException:
+        print("   no existing champion — first promotion")
 
     version_chall = client.get_model_version_by_alias(name= MLFLOW_MODEL_NAME, alias= "challenger").version
     client.set_registered_model_alias(name= MLFLOW_MODEL_NAME,
                                       alias= "champion",
                                       version= version_chall)
+    print(f"✅ Challenger v{version_chall} promoted to champion")
