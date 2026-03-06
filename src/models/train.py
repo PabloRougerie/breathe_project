@@ -6,6 +6,7 @@ from src.params import *
 import time
 
 def initiate_model():
+    """Build and return an untrained sklearn Pipeline (OneHotEncoder + LGBMRegressor with BEST_PARAMS)."""
     encoder  = make_column_transformer((OneHotEncoder(sparse_output= False, handle_unknown= "ignore"),
                                    ["city"]),
                                    remainder= "passthrough",
@@ -16,6 +17,7 @@ def initiate_model():
 
 
 def train_model(model, X, y):
+    """Fit model on (X, y). Returns (fitted_model, fit_time_seconds)."""
 
     t0 = time.time()
     model.fit(X,y)

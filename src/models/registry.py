@@ -27,6 +27,7 @@ def save_model(model):
     return result.registered_model_version
 
 def register_model(client, version, alias: str):
+    """Assign an alias ('champion' or 'challenger') to a registered model version and set matching tag."""
 
     if alias not in ["challenger", "champion"]:
         raise ValueError(f"alias must be 'challenger' or 'champion', got {alias} instead")
@@ -40,6 +41,11 @@ def register_model(client, version, alias: str):
 
 
 def promote_challenger(client):
+    """Promote the current 'challenger' to 'champion'.
+
+    Tags the existing champion as 'archived' and removes its alias before promoting.
+    Safe on first promotion (no existing champion).
+    """
 
 
     try:

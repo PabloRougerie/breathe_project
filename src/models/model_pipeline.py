@@ -16,11 +16,15 @@ def setup_mlflow():
 
 
 def run_training(X, y, dataset_metadata):
-    """Instantiate, train, save and register a new model as 'challenger'.
+    """Instantiate, train, save and register a new model.
+
+    First run: model registered directly as 'champion'.
+    Subsequent runs: model registered as 'challenger' (existing champion preserved).
 
     Logs to MLflow:
-      params   — hyperparams (BEST_PARAMS), model_version, date_start, date_end
-      artifact — train_metadata.json: fit_time_seconds, n_rows, n_features, list_features
+      params   — BEST_PARAMS, model_version, date_start, date_end
+      artifact — train_metadata.json: fit_time, n_rows, n_features, list_features
+      tags     — run_type, model_alias, date_start, date_end
     Returns:
       trained_model, model_version (str)
     """
@@ -38,21 +42,23 @@ def run_training(X, y, dataset_metadata):
         trained_model, fit_time = train_model(model, X, y)
         print(f"   fit time: {fit_time}s")
 
-        # Filterable params
+        # log hyperparams
         mlflow.log_params(BEST_PARAMS)
 
-        # Single artifact: fit context + dataset stats
+        # creates dict with params relative to train
         train_artifact = {
             "fit_time": fit_time,
             **{k: v for k, v in dataset_metadata.items() if k not in ("date_start", "date_end")}
-            # n_rows, n_features, list_features
+
         }
+        #log as artifact in mlflow
         mlflow.log_dict(train_artifact, "train_metadata.json")
 
         print("💾 Saving model to MLflow registry...")
         model_version = save_model(trained_model)
         print(f"   model registered as version {model_version}")
 
+        #log searchable/filtrable params for that run. (dates are important to know where we're at)
         mlflow.log_params({
             "date_start":    dataset_metadata["date_start"],
             "date_end":      dataset_metadata["date_end"],
@@ -60,12 +66,13 @@ def run_training(X, y, dataset_metadata):
         })
 
 
-        try:
+        try:#if works, there's a champion already, registring a challenger
             client.get_model_version_by_alias(name= MLFLOW_MODEL_NAME, alias= "champion")
-            print(f"no champion found. registring model as first champion")
-            #if works, there's a champion, registring a challenger
+            print(f"champion already existing. registring model as challenger")
+
             assigned_alias = "challenger"
             register_model(client, version=model_version, alias= assigned_alias)
+            #set as tags in order to appear in the run view in MLflow UI
             mlflow.set_tags({
             "run_type":    "training",
             "model_alias": assigned_alias,
@@ -100,10 +107,11 @@ def run_evaluating(X_val, y_true, dataset_metadata, model=None, model_version=No
 
     Logs to MLflow:
       params  — eval_date, eval_mode, model_version, model_alias, date_start, date_end
-      metric  — test_rmse (eval_mode='test_set') or fresh_batch_rmse (eval_mode='fresh_batch')
+      metric  — rmse
+      tags    — run_type, model_alias, date_start, date_end
     Args:
       model, model_version: pass when chaining with run_training (avoids registry round-trip)
-      alias: used when loading from registry (ignored if model is passed)
+      alias: registry alias used to load the model; also logged as tag
       eval_mode: 'test_set' (periodic benchmark) or 'fresh_batch' (new production data)
     Returns:
       score (float)
@@ -138,6 +146,7 @@ def run_evaluating(X_val, y_true, dataset_metadata, model=None, model_version=No
         })
         mlflow.log_metric("rmse", score)
 
+        #set tag to appear in run view in UI
         mlflow.set_tags({
             "run_type":    "evaluation",
             "model_alias": alias,
