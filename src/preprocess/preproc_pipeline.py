@@ -7,7 +7,7 @@ from src.utils import *
 from src.preprocess.cleaning import *
 from src.preprocess.features import *
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 @dataclass
 class PreprocessConfig:
@@ -18,6 +18,7 @@ class PreprocessConfig:
     approach: str = DEFAULT_APPROACH
     limit: int = LIMIT
     horizon: int = HORIZON
+    features: list = field(default_factory=lambda: SELECTED_FEATURES)  #to allow custolmization of list between instances
 
 
 def preprocessing_pipeline(airqual_df, weather_df, config: PreprocessConfig = PreprocessConfig()):
@@ -83,7 +84,13 @@ def preprocessing_pipeline(airqual_df, weather_df, config: PreprocessConfig = Pr
 
     #split data
     X = data.drop(columns = ["target", "date"])
+    X = X[config.features]
+
     y = data["target"]
+
+    # metadata reflects the features actually passed to the model
+    dataset_metadata["n_features"] = len(X.columns)
+    dataset_metadata["list_features"] = list(X.columns)
 
     print(f"✅ Preprocessing done — {dataset_metadata['n_rows']} rows, {dataset_metadata['n_features']} features | {dataset_metadata['date_start']} → {dataset_metadata['date_end']}")
 

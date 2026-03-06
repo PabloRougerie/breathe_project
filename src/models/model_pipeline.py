@@ -8,7 +8,11 @@ from src.models.registry import *
 
 def setup_mlflow():
     mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
-    mlflow.set_experiment(MLFLOW_EXPERIMENT_NAME)
+    experiment = mlflow.set_experiment(MLFLOW_EXPERIMENT_NAME)
+    print(f"✅ MLflow ready")
+    print(f"   tracking URI : {mlflow.get_tracking_uri()}")
+    print(f"   experiment   : {experiment.name} (id: {experiment.experiment_id})")
+
 
 
 def run_training(X, y, dataset_metadata):
@@ -21,6 +25,7 @@ def run_training(X, y, dataset_metadata):
       trained_model, model_version (str)
     """
     mlflow.end_run()
+
     with mlflow.start_run() as run:
 
         client = MlflowClient()
@@ -54,8 +59,35 @@ def run_training(X, y, dataset_metadata):
             "model_version": model_version
         })
 
-        register_challenger(client, version=model_version)
-        print(f"✅ Model v{model_version} trained, logged and registered as 'challenger'")
+
+        try:
+            client.get_model_version_by_alias(name= MLFLOW_MODEL_NAME, alias= "champion")
+            print(f"no champion found. registring model as first champion")
+            #if works, there's a champion, registring a challenger
+            assigned_alias = "challenger"
+            register_model(client, version=model_version, alias= assigned_alias)
+            mlflow.set_tags({
+            "run_type":    "training",
+            "model_alias": assigned_alias,
+            "date_start":  dataset_metadata["date_start"],
+            "date_end":    dataset_metadata["date_end"],
+        })
+            print(f"✅ Model v{model_version} trained, logged and registered as {assigned_alias}")
+
+        except:
+            #if doesn't work: no champ yet (first train), promoting as champion
+            assigned_alias = "champion"
+            register_model(client, version=model_version, alias= assigned_alias)
+            mlflow.set_tags({
+            "run_type":    "training",
+            "model_alias": assigned_alias,
+            "date_start":  dataset_metadata["date_start"],
+            "date_end":    dataset_metadata["date_end"],
+        })
+            print(f"✅ Model v{model_version} trained, logged and registered as '{assigned_alias}'")
+
+
+
 
         return trained_model, model_version
 
@@ -79,11 +111,10 @@ def run_evaluating(X_val, y_true, dataset_metadata, model=None, model_version=No
     if eval_mode not in ("test_set", "fresh_batch"):
         raise ValueError(f"❌ eval_mode must be 'test_set' or 'fresh_batch', got '{eval_mode}'")
 
-    if model is not None and alias == "champion":
-        raise ValueError("❌ model passed but alias is 'champion' (default) — pass alias='challenger' explicitly when chaining with run_training")
+
 
     with mlflow.start_run() as run:
-        print(f" MLflow run started — run_id: {run.info.run_id}")
+        print(f"ℹ️ MLflow run started — run_id: {run.info.run_id}")
 
         # Load from registry if no model passed (standalone eval, not chained after training)
         if model is None:
@@ -106,6 +137,13 @@ def run_evaluating(X_val, y_true, dataset_metadata, model=None, model_version=No
             "date_end":      dataset_metadata["date_end"],
         })
         mlflow.log_metric("rmse", score)
+
+        mlflow.set_tags({
+            "run_type":    "evaluation",
+            "model_alias": alias,
+            "date_start":  dataset_metadata["date_start"],
+            "date_end":    dataset_metadata["date_end"],
+        })
 
         print(f"✅ Evaluation done — RMSE: {round(score, 4)} | model v{model_version} | {eval_mode}")
 

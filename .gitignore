@@ -24,6 +24,8 @@ notebooks/catboost_info/
 data/
 *.csv
 *.parquet
+model/
+context.md
 
 # MLflow
 mlruns/
