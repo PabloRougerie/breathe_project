@@ -26,7 +26,6 @@ class OpenWeatherClient:
         ...     cities=cities,
         ...     start_date="2023-01-01",
         ...     end_date="2023-12-31",
-        ...     output_path="../data/raw/weather.csv"
         ... )
     """
 
@@ -57,10 +56,9 @@ class OpenWeatherClient:
             lon (float): Longitude
             start_date (str): Start date (YYYY-MM-DD)
             end_date (str): End date (YYYY-MM-DD)
-            cache_dir (str): Directory path for caching JSON files
 
         Returns:
-            None (data saved to cache directory)
+            None (data saved to cache via storage_client)
         """
         # Create cache directory if needed
 
@@ -72,7 +70,7 @@ class OpenWeatherClient:
         # Iterate through date range
         for day in tqdm(date_range, desc=f"Fetching {city_name} weather data"):
             day_str = day.strftime('%Y-%m-%d')
-            file_name = f"{city_name}/weather_{day_str}.json"
+            file_name = f"{city_name}/weather/weather_{day_str}.json"
 
             # Skip if already cached
             if self.storage_client.exists(file_name):
@@ -148,18 +146,17 @@ class OpenWeatherClient:
         Load all cached JSON files from a directory and merge into DataFrame.
 
         Args:
-            cache_dir (str): Directory containing weather_*.json files
+            city (str): City name, used to scope the list prefix
 
         Returns:
-            pd.DataFrame: Merged and sorted weather data
+            pd.DataFrame: Merged and sorted weather data for that city
         """
-        cache_path = CACHE_DIR
-        json_files = cache_path.glob(f"{city}/weather_*.json")
+        prefix = f"{city}/weather"
         data = []
+        file_list = self.storage_client.list(prefix= prefix)
 
-        for file in json_files:
-            file_name = file.relative_to(CACHE_DIR)
-            data.append(self.storage_client.read(str(file_name)))
+        for file in file_list:
+            data.append(self.storage_client.read(str(file)))
 
         df = pd.DataFrame(data)
         df["date"] = pd.to_datetime(df["date"])
@@ -176,8 +173,7 @@ class OpenWeatherClient:
             cities (dict): Cities with coordinates {"city_name": {"lat": float, "lon": float}}
             start_date (str): Start date (YYYY-MM-DD)
             end_date (str): End date (YYYY-MM-DD)
-            cache_base_dir (str): Base directory for cache (default: "../data/cache")
-            output_path (str): Output CSV path (default: "../data/raw/weather.csv")
+
 
         Returns:
             pd.DataFrame: Combined weather data for all cities
@@ -215,12 +211,16 @@ class OpenWeatherClient:
 
         all_cities_df = pd.concat(all_dataframes, ignore_index=True)
 
+        print(f"\n{'=' * 50}")
+        print(f"✓ Ingestion complete!")
+        print(f"  {len(all_dataframes)} cities processed")
+        print(f"  {len(all_cities_df)} total measurements")
+
         # Save to disk
         if self.storage == "local":
             save_data_local(all_cities_df, LOCAL_RAW_DIR)
-
+            print(f"  Saved to: {LOCAL_RAW_DIR}")
         else:
-            pass
-        #TODO load to bq
+            pass  # TODO: load to BQ
 
         return all_cities_df

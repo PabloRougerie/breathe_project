@@ -2,6 +2,7 @@ from pathlib import Path
 import pandas as pd
 import json
 import os
+from src.params import *
 
 from abc import ABC, abstractmethod
 from google.cloud import storage
@@ -77,6 +78,10 @@ class StorageClient(ABC):
     def exists(self,path):
         pass
 
+    @abstractmethod
+    def list(self,prefix):
+        pass
+
 class LocalStorageClient(StorageClient):
         def __init__(self, cache_dir):
             super().__init__()
@@ -90,7 +95,7 @@ class LocalStorageClient(StorageClient):
                 json.dump(data, f)
 
         def read(self, file_name):
-            path = Path(self.cache_dir) / file_name
+            path = Path(self.cache_dir) / file_name # city/{api}/name
             with open(path, "r") as f:
                 return json.load(f)
 
@@ -101,6 +106,11 @@ class LocalStorageClient(StorageClient):
                 return True
             else:
                 return False
+
+        def list(self, prefix):
+            path = Path(self.cache_dir) / prefix
+            file_list = [str(file.relative_to(self.cache_dir)) for file in path.glob("*.json")]
+            return file_list
 
 
 
@@ -117,7 +127,7 @@ class GCSStorageClient(StorageClient):
             return json.loads(blob.download_as_text())
 
         def write(self, data, blob_name):
-            blob = self.bucket.blob(blob_name)
+            blob = self.bucket.blob(blob_name) # fortmat: f"{city_name}/weather/weather_{day_str}.json"
             blob.upload_from_string(data= json.dumps(data), content_type="application/json")
 
         def exists(self, blob_name):
@@ -125,6 +135,11 @@ class GCSStorageClient(StorageClient):
             blob = self.bucket.blob(blob_name)
 
             return blob.exists()
+
+        def list(self, prefix):
+            blobs = self.client.list_blobs(BUCKET_NAME, prefix= prefix)
+            blob_list = [blob.name for blob in blobs]
+            return blob_list
 
 
 

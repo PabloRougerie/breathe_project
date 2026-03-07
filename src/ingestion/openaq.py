@@ -115,7 +115,7 @@ class OpenAQClient:
             sensor_id (int): Sensor ID
             start_date (str): Start date (YYYY-MM-DD)
             end_date (str): End date (YYYY-MM-DD)
-            cache_dir (str): Directory to cache sensor data
+            file_name (str): Logical cache path (e.g. city/sensor_{id}.json)
 
         Returns:
             dict: JSON response with daily measurements
@@ -144,7 +144,6 @@ class OpenAQClient:
             if response.status_code == 200:
                 results = response.json()
                 print(f"  └─ Sensor {sensor_id}: fetched from API")
-                print(results)
 
                 # Check 1: empty JSON?
                 if not results.get("results") or len(results.get("results")) == 0:
@@ -185,7 +184,7 @@ class OpenAQClient:
             sensor_ids (list): List of sensor IDs to fetch
             start_date (str): Start date (YYYY-MM-DD)
             end_date (str): End date (YYYY-MM-DD)
-            cache_dir (str): Directory to cache sensor data
+            city (str): City name, used to scope cache file names
 
         Returns:
             pd.DataFrame: Aggregated measurements from all sensors
@@ -248,7 +247,6 @@ class OpenAQClient:
             end_date (str): Data fetch end date (YYYY-MM-DD)
             start_project_date (str): Project start date for sensor filtering (YYYY-MM-DD)
             end_project_date (str): Project end date for sensor filtering (YYYY-MM-DD)
-            output_path (str): Output CSV path (default: "../data/raw/airqual.csv")
 
         Returns:
             pd.DataFrame: Combined PM2.5 measurements for all cities
@@ -297,8 +295,8 @@ class OpenAQClient:
 
         # Save to disk
         if self.storage == "local":
-            save_data_local(df=all_aq_measurements, output_path= LOCAL_RAW_DIR)
-            print(f"  Saved to: {output_path}")
+            save_data_local(df=all_aq_measurements, output_path=LOCAL_RAW_DIR)
+            print(f"  Saved to: {LOCAL_RAW_DIR}")
         else:
             # TODO add function to load to bq
             pass
