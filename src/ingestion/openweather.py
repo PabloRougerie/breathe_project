@@ -7,6 +7,8 @@ import os
 from tqdm.auto import tqdm
 from pathlib import Path
 from src.utils import save_data_local
+from src.utils import *
+from src.params import *
 
 
 class OpenWeatherClient:
@@ -28,15 +30,24 @@ class OpenWeatherClient:
         ... )
     """
 
-    def __init__(self, api_key=None, max_retry=3):
+    def __init__(self, api_key=None, max_retry=3, storage= "local"):
         self.api_key = api_key or os.getenv("API_OW")
         self.max_retry = max_retry
         self.base_url = "https://api.openweathermap.org/data/3.0/onecall/day_summary"
+        self.storage = storage
 
         if not self.api_key:
             raise ValueError("API key must be provided or set in API_OW environment variable")
 
-    def fetch_city_data(self, city_name, lat, lon, start_date, end_date, cache_dir):
+        if self.storage not in ["local", "gcp"]:
+            raise ValueError(f"storage is either 'local' or on 'gcp', got {storage} instead")
+
+        if storage == "local":
+            self.storage_client = LocalStorageClient(cache_dir= CACHE_DIR)
+        else:
+            self.storage_client = GCSStorageClient(bucket_name= BUCKET_NAME)
+
+    def fetch_city_data(self, city_name, lat, lon, start_date, end_date):
         """
         Fetch daily weather data for a single city with caching and retry logic.
 
@@ -52,7 +63,7 @@ class OpenWeatherClient:
             None (data saved to cache directory)
         """
         # Create cache directory if needed
-        os.makedirs(cache_dir, exist_ok=True)
+
 
         date_range = pd.date_range(start=start_date, end=end_date, freq="D")
         successful_call = 0
@@ -61,10 +72,10 @@ class OpenWeatherClient:
         # Iterate through date range
         for day in tqdm(date_range, desc=f"Fetching {city_name} weather data"):
             day_str = day.strftime('%Y-%m-%d')
-            cache_file = f"{cache_dir}/weather_{day_str}.json"
+            file_name = f"{city_name}/weather_{day_str}.json"
 
             # Skip if already cached
-            if os.path.exists(cache_file):
+            if self.storage_client.exists(file_name):
                 cached_count += 1
                 continue
 
@@ -109,8 +120,7 @@ class OpenWeatherClient:
                         }
 
                         # Save to cache
-                        with open(cache_file, "w") as f:
-                            json.dump(results_dict, f)
+                        self.storage_client.write(results_dict, file_name)
 
                         successful_call += 1
                         break
@@ -133,7 +143,7 @@ class OpenWeatherClient:
         else:
             print(f"⚠️ [{city_name}] Incomplete: {successful_call + cached_count}/{len(date_range)} days")
 
-    def merge_cached_data(self, cache_dir):
+    def merge_cached_data(self, city):
         """
         Load all cached JSON files from a directory and merge into DataFrame.
 
@@ -143,13 +153,13 @@ class OpenWeatherClient:
         Returns:
             pd.DataFrame: Merged and sorted weather data
         """
-        cache_path = Path(cache_dir)
-        json_files = cache_path.glob("weather_*.json")
+        cache_path = CACHE_DIR
+        json_files = cache_path.glob(f"{city}/weather_*.json")
         data = []
 
         for file in json_files:
-            with open(file, "r") as f:
-                data.append(json.load(f))
+            file_name = file.relative_to(CACHE_DIR)
+            data.append(self.storage_client.read(str(file_name)))
 
         df = pd.DataFrame(data)
         df["date"] = pd.to_datetime(df["date"])
@@ -158,8 +168,7 @@ class OpenWeatherClient:
         return df
 
 
-    def get_all_data(self, cities, start_date, end_date, cache_base_dir="../data/cache",
-                     output_path="../data/raw/weather.csv"):
+    def get_all_data(self, cities, start_date, end_date):
         """
         Fetch weather data for multiple cities and save to CSV.
 
@@ -181,7 +190,7 @@ class OpenWeatherClient:
             print(f"Processing {city}...")
             print(f"{'='*50}")
 
-            cache_dir = f"{cache_base_dir}/{city}/weather"
+
 
             # Fetch and cache data
             self.fetch_city_data(
@@ -189,12 +198,11 @@ class OpenWeatherClient:
                 lat=coords["lat"],
                 lon=coords["lon"],
                 start_date=start_date,
-                end_date=end_date,
-                cache_dir=cache_dir
+                end_date=end_date
             )
 
             # Load cached data
-            df = self.merge_cached_data(cache_dir)
+            df = self.merge_cached_data(city)
 
             if not df.empty:
                 df["city"] = city
@@ -208,6 +216,11 @@ class OpenWeatherClient:
         all_cities_df = pd.concat(all_dataframes, ignore_index=True)
 
         # Save to disk
-        save_data_local(all_cities_df, output_path)
+        if self.storage == "local":
+            save_data_local(all_cities_df, LOCAL_RAW_DIR)
+
+        else:
+            pass
+        #TODO load to bq
 
         return all_cities_df

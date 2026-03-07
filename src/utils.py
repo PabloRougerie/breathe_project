@@ -1,5 +1,10 @@
 from pathlib import Path
 import pandas as pd
+import json
+import os
+
+from abc import ABC, abstractmethod
+from google.cloud import storage
 
 def save_data_local(df, output_path):
     """
@@ -51,6 +56,80 @@ def load_data_local(filepath, source: str):
 
     print(f"✅ Loaded {len(df)} rows from {filepath}")
     return df
+
+
+
+
+class StorageClient(ABC):
+
+    def __init__(self):
+        pass
+
+    @abstractmethod
+    def read(self, path):
+        pass
+
+    @abstractmethod
+    def write(self,data, path):
+        pass
+
+    @abstractmethod
+    def exists(self,path):
+        pass
+
+class LocalStorageClient(StorageClient):
+        def __init__(self, cache_dir):
+            super().__init__()
+            self.cache_dir = cache_dir
+
+        def write(self, data, file_name):
+
+            path = Path(self.cache_dir) / file_name #create all path until json file
+            os.makedirs(path.parent, exist_ok= True) #create all dir from root to json file
+            with open(path, "w") as f: #write within the path including a json, meaning that it will crate a json file
+                json.dump(data, f)
+
+        def read(self, file_name):
+            path = Path(self.cache_dir) / file_name
+            with open(path, "r") as f:
+                return json.load(f)
+
+
+        def exists(self, file_name):
+            path = Path(self.cache_dir) / file_name
+            if os.path.exists(path):
+                return True
+            else:
+                return False
+
+
+
+class GCSStorageClient(StorageClient):
+
+        def __init__(self, bucket_name):
+            super().__init__()
+
+            self.client = storage.Client()
+            self.bucket = self.client.bucket(bucket_name)
+
+        def read(self,blob_name):
+            blob = self.bucket.blob(blob_name)
+            return json.loads(blob.download_as_text())
+
+        def write(self, data, blob_name):
+            blob = self.bucket.blob(blob_name)
+            blob.upload_from_string(data= json.dumps(data), content_type="application/json")
+
+        def exists(self, blob_name):
+
+            blob = self.bucket.blob(blob_name)
+
+            return blob.exists()
+
+
+
+
+
 
 
 

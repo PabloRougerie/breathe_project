@@ -7,7 +7,7 @@ from src.utils import *
 from src.preprocess.cleaning import *
 from src.preprocess.features import *
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 @dataclass
 class PreprocessConfig:
@@ -18,9 +18,12 @@ class PreprocessConfig:
     approach: str = DEFAULT_APPROACH
     limit: int = LIMIT
     horizon: int = HORIZON
+    features: list = field(default_factory=lambda: SELECTED_FEATURES)  #to allow custolmization of list between instances
 
 
 def preprocessing_pipeline(airqual_df, weather_df, config: PreprocessConfig = PreprocessConfig()):
+
+    print(f"⚙️  Starting preprocessing — airqual: {len(airqual_df)} rows, weather: {len(weather_df)} rows")
 
     #------------------
     # INITIAL CLEANING
@@ -44,6 +47,7 @@ def preprocessing_pipeline(airqual_df, weather_df, config: PreprocessConfig = Pr
     #-------
 
     data = merge_source_df(df_airqual= airqual_ready, df_weather= weather_ready)
+    print(f"   rows after merge: {len(data)}")
     data = single_gaps_imputer(df= data, limit= config.limit)
 
     #------------------
@@ -58,16 +62,36 @@ def preprocessing_pipeline(airqual_df, weather_df, config: PreprocessConfig = Pr
     #------------------
 
     data = feature_engineering(data, approach= config.approach)
+    print(f"   features generated ({config.approach}): {len(data.columns) - 2} features")
 
-
-        #------------------
+    #------------------
     # FINAL CLEANING
     #------------------
 
+    rows_before = len(data)
     data = drop_na(data)
     data = drop_preprocess_cols(data)
+    print(f"   rows dropped (dropna + preprocess cols): {rows_before - len(data)} → {len(data)} remaining")
 
+    #extract metadata for logging
+    dataset_metadata = {
+        "date_start": str(data["date"].min()),
+        "date_end": str(data["date"].max()),
+        "n_rows": len(data),
+        "n_features": len(data.columns) - 2,
+        "list_features": [feat for feat in data.columns if feat not in ["date", "target"]]
+    }
 
-    print("✅ raw data processed susscessfully!")
+    #split data
+    X = data.drop(columns = ["target", "date"])
+    X = X[config.features]
 
-    return data
+    y = data["target"]
+
+    # metadata reflects the features actually passed to the model
+    dataset_metadata["n_features"] = len(X.columns)
+    dataset_metadata["list_features"] = list(X.columns)
+
+    print(f"✅ Preprocessing done — {dataset_metadata['n_rows']} rows, {dataset_metadata['n_features']} features | {dataset_metadata['date_start']} → {dataset_metadata['date_end']}")
+
+    return dataset_metadata, X, y

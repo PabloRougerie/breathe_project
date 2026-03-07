@@ -20,6 +20,9 @@ BQ_DATASET_PROCESSED = os.environ.get("BQ_DATASET_PROCESSED")
 BUCKET_NAME = os.environ.get("BUCKET_NAME")
 
 # ========== ML Logic Configuration ==========
+MLFLOW_TRACKING_URI = os.environ.get("MLFLOW_TRACKING_URI")
+MLFLOW_MODEL_NAME = os.environ.get("MLFLOW_MODEL_NAME")
+MLFLOW_EXPERIMENT_NAME = os.environ.get("MLFLOW_EXPERIMENT_NAME")
 MODEL_SAVE = os.environ.get("MODEL_SAVE")
 EVALUATION_START_DATE = os.environ.get("EVALUATION_START_DATE")
 USE_CACHE = os.environ.get("USE_CACHE")
@@ -105,3 +108,23 @@ SELECTED_FEATURES = ['lag_1',
  'wind_direction',
  'lag_3',
  'humidity']
+
+BEST_PARAMS = {
+  "learning_rate": 0.039215086373645916,
+  "n_estimators": 365,
+  "num_leaves": 192,
+  "max_depth": 3,
+  "min_child_samples": 14,
+  "reg_alpha": 1.0104102789955898,
+  "reg_lambda": 0.00016444594773119733,
+  "subsample": 0.5287082281151364,
+  "colsample_bytree": 0.9863936278891989,
+  "subsample_freq": 1,
+  "random_state": 273,
+  "verbose": -1
+}
+
+DRIFT_THRESHOLD = 0.25
+IMPROVEMENT_THRESHOLD = 0.05
+
+CACHE_DIR = Path(__file__).parent.parent /"data" / "cache"
