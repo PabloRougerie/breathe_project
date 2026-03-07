@@ -1,5 +1,10 @@
 from pathlib import Path
 import pandas as pd
+import json
+import os
+
+from abc import ABC, abstractmethod
+from google.cloud import storage
 
 def save_data_local(df, output_path):
     """
@@ -51,6 +56,74 @@ def load_data_local(filepath, source: str):
 
     print(f"✅ Loaded {len(df)} rows from {filepath}")
     return df
+
+
+
+
+class StorageClient(ABC):
+
+    def __init__(self):
+        pass
+
+    @abstractmethod
+    def read(self, path):
+        pass
+
+    @abstractmethod
+    def write(self,data, path):
+        pass
+
+    @abstractmethod
+    def exists(self,path):
+        pass
+
+class LocalStorageClient(StorageClient):
+        def __init__(self):
+            super().__init__()
+
+        def read(self, cache_file):
+            with open(cache_file, "r") as f:
+                return json.load(f)
+
+        def write(self, data, cache_file):
+
+            with open(cache_file, "w") as f:
+                json.dump(data, f)
+
+        def exists(self, path):
+            if os.path.exists(path):
+                return True
+            else:
+                return False
+
+
+
+class GCSStorageClient(StorageClient):
+
+        def __init__(self, bucket_name):
+            super().__init__()
+
+            self.client = storage.Client()
+            self.bucket = self.client.bucket(bucket_name)
+
+        def read(self,blob_name):
+            blob = self.bucket.blob(blob_name)
+            return json.loads(blob.download_as_text())
+
+        def write(self, data, blob_name):
+            blob = self.bucket.blob(data)
+            blob.upload_from_string(data= json.dump(data), content_type="application/json")
+
+        def exists(self, blob_name):
+
+            blob = self.bucket.blob(blob_name)
+
+            return blob.exists()
+
+
+
+
+
 
 
 
