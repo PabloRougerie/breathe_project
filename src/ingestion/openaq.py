@@ -107,7 +107,7 @@ class OpenAQClient:
         print(f"  PM2.5 sensors found: {len(sensor_ids)}")
         return sensor_ids
 
-    def fetch_one_sensor_data(self, sensor_id, start_date, end_date):
+    def fetch_one_sensor_data(self, sensor_id, start_date, end_date, file_name):
         """
         Fetch daily PM2.5 measurements for a single sensor.
 
@@ -121,7 +121,7 @@ class OpenAQClient:
             dict: JSON response with daily measurements
         """
         # Check cache first
-        file_name= f"sensor_{sensor_id}.json"
+
 
         if self.storage_client.exists(file_name= file_name):
             print(f"  └─ Sensor {sensor_id}: using cached data")
@@ -177,7 +177,7 @@ class OpenAQClient:
                 print(f"      ✗ API call failed after {self.max_retry} attempts")
                 return {"results": []}
 
-    def extract_all_sensor_data(self, sensor_ids, start_date, end_date):
+    def extract_all_sensor_data(self, sensor_ids, start_date, end_date, city):
         """
         Fetch and extract PM2.5 measurements for multiple sensors.
 
@@ -196,7 +196,8 @@ class OpenAQClient:
         # Fetch raw data for each sensor
         for i, sensor_id in enumerate(sensor_ids, 1):
             print(f"  [{i}/{len(sensor_ids)}] Sensor {sensor_id}")
-            sensor_data[sensor_id] = self.fetch_one_sensor_data(sensor_id, start_date, end_date)
+            file_name = f"{city}/sensor_{sensor_id}.json"
+            sensor_data[sensor_id] = self.fetch_one_sensor_data(sensor_id, start_date, end_date, file_name = file_name)
 
         all_dataframes = []
 
@@ -237,7 +238,7 @@ class OpenAQClient:
         return all_measurements
 
     def get_data(self, cities, start_date, end_date, start_project_date,
-                 end_project_date, output_path="../data/raw/airqual.csv"):
+                 end_project_date):
         """
         Get PM2.5 measurements from OpenAQ API for multiple cities.
 
@@ -272,7 +273,7 @@ class OpenAQClient:
 
             # Extract measurements for filtered sensors
 
-            aq_by_city = self.extract_all_sensor_data(sensor_list, start_date, end_date)
+            aq_by_city = self.extract_all_sensor_data(sensor_list, start_date, end_date, city= city)
 
             # Only add if we got data
             if not aq_by_city.empty:
