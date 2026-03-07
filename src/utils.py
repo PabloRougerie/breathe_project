@@ -86,7 +86,7 @@ class LocalStorageClient(StorageClient):
                 return json.load(f)
 
         def write(self, data, cache_file):
-
+            os.makedirs(os.path.dirname(cache_file), exist_ok= True)
             with open(cache_file, "w") as f:
                 json.dump(data, f)
 
@@ -111,8 +111,8 @@ class GCSStorageClient(StorageClient):
             return json.loads(blob.download_as_text())
 
         def write(self, data, blob_name):
-            blob = self.bucket.blob(data)
-            blob.upload_from_string(data= json.dump(data), content_type="application/json")
+            blob = self.bucket.blob(blob_name)
+            blob.upload_from_string(data= json.dumps(data), content_type="application/json")
 
         def exists(self, blob_name):
 
