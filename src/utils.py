@@ -78,19 +78,25 @@ class StorageClient(ABC):
         pass
 
 class LocalStorageClient(StorageClient):
-        def __init__(self):
+        def __init__(self, cache_dir):
             super().__init__()
+            self.cache_dir = cache_dir
 
-        def read(self, cache_file):
-            with open(cache_file, "r") as f:
-                return json.load(f)
+        def write(self, data, file_name):
 
-        def write(self, data, cache_file):
-            os.makedirs(os.path.dirname(cache_file), exist_ok= True)
-            with open(cache_file, "w") as f:
+            path = Path(self.cache_dir) / file_name #create all path until json file
+            os.makedirs(path.parent, exist_ok= True) #create all dir from root to json file
+            with open(path, "w") as f: #write within the path including a json, meaning that it will crate a json file
                 json.dump(data, f)
 
-        def exists(self, path):
+        def read(self, file_name):
+            path = Path(self.cache_dir) / file_name
+            with open(path, "r") as f:
+                return json.load(f)
+
+
+        def exists(self, file_name):
+            path = Path(self.cache_dir) / file_name
             if os.path.exists(path):
                 return True
             else:
