@@ -18,10 +18,17 @@ class PreprocessConfig:
     approach: str = DEFAULT_APPROACH
     limit: int = LIMIT
     horizon: int = HORIZON
-    features: list = field(default_factory=lambda: SELECTED_FEATURES)  #to allow custolmization of list between instances
+    features: list = field(default_factory=lambda: SELECTED_FEATURES)  # mutable default: field() required to avoid shared state between instances
 
 
 def preprocessing_pipeline(airqual_df, weather_df, config: PreprocessConfig = PreprocessConfig()):
+    """Run the full preprocessing pipeline on raw airqual and weather DataFrames.
+
+    Returns:
+        dataset_metadata (dict): date_start, date_end, n_rows, n_features, list_features
+        X (pd.DataFrame): feature matrix (config.features only)
+        y (pd.Series): target
+    """
 
     print(f"⚙️  Starting preprocessing — airqual: {len(airqual_df)} rows, weather: {len(weather_df)} rows")
 
