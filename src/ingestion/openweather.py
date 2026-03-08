@@ -60,9 +60,6 @@ class OpenWeatherClient:
         Returns:
             None (data saved to cache via storage_client)
         """
-        # Create cache directory if needed
-
-
         date_range = pd.date_range(start=start_date, end=end_date, freq="D")
         successful_call = 0
         cached_count = 0

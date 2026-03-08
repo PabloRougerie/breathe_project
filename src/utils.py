@@ -62,84 +62,121 @@ def load_data_local(filepath, source: str):
 
 
 class StorageClient(ABC):
+    """Abstract interface for JSON cache storage.
+
+    All methods use a logical file_name / prefix of the form:
+        {city}/{api_source}/{filename}.json
+    e.g. "Paris/weather/weather_2023-01-01.json"
+         "Paris/sensor_12345.json"
+
+    Concrete implementations resolve this logical name to a physical
+    location (local filesystem or GCS bucket).
+    """
 
     def __init__(self):
         pass
 
     @abstractmethod
-    def read(self, path):
+    def read(self, file_name: str) -> dict:
+        """Load and return a JSON file as a dict. file_name: logical path relative to root."""
         pass
 
     @abstractmethod
-    def write(self,data, path):
+    def write(self, data: dict, file_name: str):
+        """Serialize data as JSON and write to file_name."""
         pass
 
     @abstractmethod
-    def exists(self,path):
+    def exists(self, file_name: str) -> bool:
+        """Return True if the file at file_name exists."""
         pass
 
     @abstractmethod
-    def list(self,prefix):
+    def list(self, prefix: str) -> list:
+        """Return list of file_names (logical paths) matching the given prefix.
+        e.g. prefix='Paris/weather' returns ['Paris/weather/weather_2023-01-01.json', ...]
+        Returned names are directly passable to read().
+        """
         pass
+
 
 class LocalStorageClient(StorageClient):
-        def __init__(self, cache_dir):
-            super().__init__()
-            self.cache_dir = cache_dir
+    """StorageClient backed by the local filesystem.
 
-        def write(self, data, file_name):
+    Args:
+        cache_dir (Path): Absolute base directory for all cache files.
+                          e.g. PROJECT_ROOT / 'data' / 'cache'
 
-            path = Path(self.cache_dir) / file_name #create all path until json file
-            os.makedirs(path.parent, exist_ok= True) #create all dir from root to json file
-            with open(path, "w") as f: #write within the path including a json, meaning that it will crate a json file
-                json.dump(data, f)
+    Full path resolution: cache_dir / file_name
+        e.g. /project/data/cache/Paris/weather/weather_2023-01-01.json
+    """
 
-        def read(self, file_name):
-            path = Path(self.cache_dir) / file_name # city/{api}/name
-            with open(path, "r") as f:
-                return json.load(f)
+    def __init__(self, cache_dir):
+        super().__init__()
+        self.cache_dir = cache_dir
 
+    def write(self, data, file_name):
+        # full path = cache_dir / {city}/{api_source}/{filename}.json
+        path = Path(self.cache_dir) / file_name
+        os.makedirs(path.parent, exist_ok=True)
+        with open(path, "w") as f:
+            json.dump(data, f)
 
-        def exists(self, file_name):
-            path = Path(self.cache_dir) / file_name
-            if os.path.exists(path):
-                return True
-            else:
-                return False
+    def read(self, file_name):
+        path = Path(self.cache_dir) / file_name
+        with open(path, "r") as f:
+            return json.load(f)
 
-        def list(self, prefix):
-            path = Path(self.cache_dir) / prefix
-            file_list = [str(file.relative_to(self.cache_dir)) for file in path.glob("*.json")]
-            return file_list
+    def exists(self, file_name):
+        path = Path(self.cache_dir) / file_name
+        if os.path.exists(path):
+            return True
+        else:
+            return False
 
+    def list(self, prefix):
+        # prefix resolves to a directory e.g. cache_dir/Paris/weather/
+        # glob("*.json") lists files in that dir only (non-recursive)
+        # relative_to(cache_dir) gives back the logical file_name passable to read()
+        path = Path(self.cache_dir) / prefix
+        file_list = [str(file.relative_to(self.cache_dir)) for file in path.glob("*.json")]
+        return file_list
 
 
 class GCSStorageClient(StorageClient):
+    """StorageClient backed by Google Cloud Storage.
 
-        def __init__(self, bucket_name):
-            super().__init__()
+    Args:
+        bucket_name (str): GCS bucket name (from BUCKET_NAME in params).
 
-            self.client = storage.Client()
-            self.bucket = self.client.bucket(bucket_name)
+    Blob name == file_name (logical path), e.g.:
+        'Paris/weather/weather_2023-01-01.json'
+        'Paris/sensor_12345.json'
+    """
 
-        def read(self,blob_name):
-            blob = self.bucket.blob(blob_name)
-            return json.loads(blob.download_as_text())
+    def __init__(self, bucket_name):
+        super().__init__()
+        self.client = storage.Client()
+        self.bucket = self.client.bucket(bucket_name)
 
-        def write(self, data, blob_name):
-            blob = self.bucket.blob(blob_name) # fortmat: f"{city_name}/weather/weather_{day_str}.json"
-            blob.upload_from_string(data= json.dumps(data), content_type="application/json")
+    def read(self, blob_name):
+        blob = self.bucket.blob(blob_name)
+        return json.loads(blob.download_as_text()) #download
 
-        def exists(self, blob_name):
+    def write(self, data, blob_name):
+        blob = self.bucket.blob(blob_name)
+        blob.upload_from_string(data=json.dumps(data), content_type="application/json")
 
-            blob = self.bucket.blob(blob_name)
+    def exists(self, blob_name):
+        blob = self.bucket.blob(blob_name)
+        return blob.exists()
 
-            return blob.exists()
-
-        def list(self, prefix):
-            blobs = self.client.list_blobs(BUCKET_NAME, prefix= prefix)
-            blob_list = [blob.name for blob in blobs]
-            return blob_list
+    def list(self, prefix):
+        # list_blobs returns all blobs whose name starts with prefix
+        # blob.name is the full blob path = logical file_name passable to read()
+        blobs = self.client.list_blobs(BUCKET_NAME, prefix=prefix)
+        blob_list = [blob.name for blob in blobs]
+        return blob_list
 
 
 

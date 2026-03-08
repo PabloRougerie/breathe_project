@@ -14,8 +14,12 @@ class OpenAQClient:
 
     Args:
         api_key (str): OpenAQ API key (if None, reads from API_AQ env var)
-        radius (int): Default search radius in meters (default: 5000)
+        radius (int): Search radius in meters (default: 7000)
+        max_retry (int): Max API retry attempts (default: 3)
+        storage (str): 'local' or 'gcp' — determines which StorageClient is used for cache
+        min_coverage (float): Minimum data coverage ratio to keep a sensor (default: 0.75)
 
+    Cache file format: {city}/sensor_{sensor_id}.json
     """
 
     def __init__(self, api_key=None, radius=7000, max_retry=3, storage= "local", min_coverage=0.75):
