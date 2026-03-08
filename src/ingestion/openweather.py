@@ -42,9 +42,9 @@ class OpenWeatherClient:
             raise ValueError(f"storage is either 'local' or on 'gcp', got {storage} instead")
 
         if storage == "local":
-            self.storage_client = LocalStorageClient(cache_dir= CACHE_DIR)
+            self.storage_client = LocalCacheClient(cache_dir= CACHE_DIR)
         else:
-            self.storage_client = GCSStorageClient(bucket_name= BUCKET_NAME)
+            self.storage_client = GCSCacheClient(bucket_name= BUCKET_NAME)
 
     def fetch_city_data(self, city_name, lat, lon, start_date, end_date):
         """

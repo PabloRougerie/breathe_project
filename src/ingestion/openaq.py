@@ -16,7 +16,7 @@ class OpenAQClient:
         api_key (str): OpenAQ API key (if None, reads from API_AQ env var)
         radius (int): Search radius in meters (default: 7000)
         max_retry (int): Max API retry attempts (default: 3)
-        storage (str): 'local' or 'gcp' — determines which StorageClient is used for cache
+        storage (str): 'local' or 'gcp' — determines which CacheClient is used for cache
         min_coverage (float): Minimum data coverage ratio to keep a sensor (default: 0.75)
 
     Cache file format: {city}/sensor_{sensor_id}.json
@@ -37,9 +37,9 @@ class OpenAQClient:
             raise ValueError(f"storage is either 'local' or on 'gcp', got {storage} instead")
 
         if storage == "local":
-            self.storage_client = LocalStorageClient(cache_dir= CACHE_DIR)
+            self.storage_client = LocalCacheClient(cache_dir= CACHE_DIR)
         else:
-            self.storage_client = GCSStorageClient(bucket_name= BUCKET_NAME)
+            self.storage_client = GCSCacheClient(bucket_name= BUCKET_NAME)
 
 
     def _get_headers(self):

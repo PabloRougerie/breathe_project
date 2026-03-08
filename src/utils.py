@@ -61,7 +61,7 @@ def load_data_local(filepath, source: str):
 
 
 
-class StorageClient(ABC):
+class CacheClient(ABC):
     """Abstract interface for JSON cache storage.
 
     All methods use a logical file_name / prefix of the form:
@@ -100,8 +100,8 @@ class StorageClient(ABC):
         pass
 
 
-class LocalStorageClient(StorageClient):
-    """StorageClient backed by the local filesystem.
+class LocalCacheClient(CacheClient):
+    """CacheClient backed by the local filesystem.
 
     Args:
         cache_dir (Path): Absolute base directory for all cache files.
@@ -143,8 +143,8 @@ class LocalStorageClient(StorageClient):
         return file_list
 
 
-class GCSStorageClient(StorageClient):
-    """StorageClient backed by Google Cloud Storage.
+class GCSCacheClient(CacheClient):
+    """CacheClient backed by Google Cloud Storage.
 
     Args:
         bucket_name (str): GCS bucket name (from BUCKET_NAME in params).
