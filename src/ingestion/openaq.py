@@ -199,7 +199,7 @@ class OpenAQClient:
         # Fetch raw data for each sensor
         for i, sensor_id in enumerate(sensor_ids, 1):
             print(f"  [{i}/{len(sensor_ids)}] Sensor {sensor_id}")
-            file_name = f"{city}/sensor_{sensor_id}.json"
+            file_name = f"{city}/air_qual/sensor_{sensor_id}.json"
             sensor_data[sensor_id] = self.fetch_one_sensor_data(sensor_id, start_date, end_date, file_name = file_name)
 
         all_dataframes = []
