@@ -7,6 +7,79 @@ from src.params import *
 from abc import ABC, abstractmethod
 from google.cloud import storage
 
+
+class StorageClient(ABC):
+
+
+    def __init__(self):
+        pass
+
+    @abstractmethod
+    def save_data(self, data, type, start_date, end_date):
+
+        pass
+
+    @abstractmethod
+    def get_data(self, type, start_date, end_date):
+        pass
+
+
+class LocalStorageClient(StorageClient):
+
+    def __init__(self, base_storage_dir):
+
+        super().__init__()
+        self.base_storage_dir = base_storage_dir
+
+    def get_data(self, type, start_date, end_date):
+
+        if type not in ["weather", "airqual", "processed"]:
+            raise ValueError(f"type must be 'weather', 'airqual', or 'processed', got {type} instead")
+
+        if type in ["weather", "airqual"]:
+            path = Path(self.base_storage_dir) / "raw" /f"{type}_{start_date}_{end_date}.csv"
+
+            if not path.exists():
+                raise FileNotFoundError(f"❌ File not found: {path}")
+
+
+            df = pd.read_csv(path)
+
+            if type == "weather":
+                df["date"] = pd.to_datetime(df["date"])
+
+            else:
+                df["date"] = pd.to_datetime(df["date_from_local"].str[:10])
+
+
+
+        else:
+            path = Path(self.base_storage_dir) / "processed" / f"{type}_{start_date}_{end_date}.csv"
+            df = pd.read_csv(path)
+
+        print(f"✅ Loaded {len(df)} rows from {path}")
+
+        return df
+
+
+
+
+
+    def save_data(self, data, type, start_date, end_date):
+
+        if type not in ["weather", "airqual", "processed"]:
+            raise ValueError(f"type must be 'weather', 'airqual', or 'processed', got {type} instead")
+
+        subfolder = "raw" if type in ["weather", "airqual"] else "processed"
+
+        path = Path(self.base_storage_dir) / subfolder /f"{type}_{start_date}_{end_date}.csv"
+        path.parent.mkdir(parents= True, exist_ok= True)
+        data.to_csv(path, index= False)
+        print(f"✅ Saved {len(data)} rows to {path}")
+
+
+
+
 def save_data_local(df, output_path):
     """
     Save DataFrame to local CSV file.
@@ -57,6 +130,8 @@ def load_data_local(filepath, source: str):
 
     print(f"✅ Loaded {len(df)} rows from {filepath}")
     return df
+
+
 
 
 

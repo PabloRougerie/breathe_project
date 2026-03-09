@@ -128,4 +128,4 @@ DRIFT_THRESHOLD = 0.25
 IMPROVEMENT_THRESHOLD = 0.05
 
 CACHE_DIR = Path(__file__).parent.parent / "data" / "cache"
-LOCAL_RAW_DIR = Path(__file__).parent.parent / "data" / "raw"
+LOCAL_STORAGE_DIR = Path(__file__).parent.parent / "data"
