@@ -3,135 +3,183 @@ import pandas as pd
 import json
 import os
 from src.params import *
+from google.cloud import bigquery
 
 from abc import ABC, abstractmethod
 from google.cloud import storage
 
 
 class StorageClient(ABC):
+    """Abstract interface for structured DataFrame persistence (raw and processed data).
 
+    Concrete implementations handle local CSV files or BigQuery tables.
+    All methods are keyed by:
+        - data_type: 'weather', 'airqual', or 'processed'
+        - start_date / end_date: date range strings (YYYY-MM-DD)
+
+    File/table naming convention:
+        Local : {base_storage_dir}/raw/{data_type}_{start_date}_{end_date}.csv
+                {base_storage_dir}/processed/{data_type}_{start_date}_{end_date}.csv
+        BQ    : {GCP_PROJECT}.{BQ_DATASET_RAW}.{data_type}
+                {GCP_PROJECT}.{BQ_DATASET_PROCESSED}.{data_type}
+    """
 
     def __init__(self):
         pass
 
     @abstractmethod
-    def save_data(self, data, type, start_date, end_date):
-
+    def save_data(self, data: pd.DataFrame, data_type: str, start_date: str, end_date: str):
+        """Persist a DataFrame for the given data type and date range."""
         pass
 
     @abstractmethod
-    def get_data(self, type, start_date, end_date):
+    def get_data(self, data_type: str, start_date: str, end_date: str) -> pd.DataFrame:
+        """Load and return a DataFrame for the given data type and date range."""
         pass
 
 
 class LocalStorageClient(StorageClient):
+    """StorageClient backed by the local filesystem.
+
+    Saves and loads CSV files under:
+        {base_storage_dir}/raw/      for 'weather' and 'airqual'
+        {base_storage_dir}/processed/ for 'processed'
+
+    Args:
+        base_storage_dir (Path | str): Root data directory, e.g. PROJECT_ROOT / 'data'
+    """
 
     def __init__(self, base_storage_dir):
-
         super().__init__()
         self.base_storage_dir = base_storage_dir
 
-    def get_data(self, type, start_date, end_date):
+    def get_data(self, data_type, start_date, end_date):
+        """Load CSV from local filesystem and return as DataFrame.
 
-        if type not in ["weather", "airqual", "processed"]:
-            raise ValueError(f"type must be 'weather', 'airqual', or 'processed', got {type} instead")
+        The 'date' column is parsed as datetime on load (csv stores dates as strings).
 
-        if type in ["weather", "airqual"]:
-            path = Path(self.base_storage_dir) / "raw" /f"{type}_{start_date}_{end_date}.csv"
+        Args:
+            data_type (str): 'weather', 'airqual', or 'processed'
+            start_date (str): Start date (YYYY-MM-DD) — part of the filename
+            end_date (str): End date (YYYY-MM-DD) — part of the filename
 
-            if not path.exists():
-                raise FileNotFoundError(f"❌ File not found: {path}")
+        Returns:
+            pd.DataFrame
+        """
+        if data_type not in ["weather", "airqual", "processed"]:
+            raise ValueError(f"data_type must be 'weather', 'airqual', or 'processed', got '{data_type}'")
 
+        subfolder = "raw" if data_type in ["weather", "airqual"] else "processed"
+        path = Path(self.base_storage_dir) / subfolder / f"{data_type}_{start_date}_{end_date}.csv"
 
-            df = pd.read_csv(path)
+        if not path.exists():
+            raise FileNotFoundError(f"❌ File not found: {path}")
 
-            if type == "weather":
-                df["date"] = pd.to_datetime(df["date"])
-
-            else:
-                df["date"] = pd.to_datetime(df["date_from_local"].str[:10])
-
-
-
-        else:
-            path = Path(self.base_storage_dir) / "processed" / f"{type}_{start_date}_{end_date}.csv"
-            df = pd.read_csv(path)
+        df = pd.read_csv(path)
+        df["date"] = pd.to_datetime(df["date"])  # csv stores dates as strings, reparse to datetime
 
         print(f"✅ Loaded {len(df)} rows from {path}")
-
         return df
 
+    def save_data(self, data, data_type, start_date, end_date):
+        """Save DataFrame as CSV to local filesystem.
 
+        Args:
+            data (pd.DataFrame): DataFrame to save
+            data_type (str): 'weather', 'airqual', or 'processed'
+            start_date (str): Start date (YYYY-MM-DD) — included in filename
+            end_date (str): End date (YYYY-MM-DD) — included in filename
+        """
+        if data_type not in ["weather", "airqual", "processed"]:
+            raise ValueError(f"data_type must be 'weather', 'airqual', or 'processed', got '{data_type}'")
 
-
-
-    def save_data(self, data, type, start_date, end_date):
-
-        if type not in ["weather", "airqual", "processed"]:
-            raise ValueError(f"type must be 'weather', 'airqual', or 'processed', got {type} instead")
-
-        subfolder = "raw" if type in ["weather", "airqual"] else "processed"
-
-        path = Path(self.base_storage_dir) / subfolder /f"{type}_{start_date}_{end_date}.csv"
-        path.parent.mkdir(parents= True, exist_ok= True)
-        data.to_csv(path, index= False)
+        subfolder = "raw" if data_type in ["weather", "airqual"] else "processed"
+        path = Path(self.base_storage_dir) / subfolder / f"{data_type}_{start_date}_{end_date}.csv"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        data.to_csv(path, index=False)
         print(f"✅ Saved {len(data)} rows to {path}")
 
 
+class GCSStorageClient(StorageClient):
+    """StorageClient backed by Google BigQuery.
 
+    Raw data ('weather', 'airqual') is stored in BQ_DATASET_RAW.
+    Processed data ('processed') is stored in BQ_DATASET_PROCESSED.
+    Table name == data_type (e.g. project.raw_dataset.weather).
 
-def save_data_local(df, output_path):
+    save_data uses DELETE + WRITE_APPEND to avoid duplicates:
+    existing rows for the date range are deleted before inserting new ones.
+    This makes the operation idempotent (safe to re-run on the same period).
     """
-    Save DataFrame to local CSV file.
 
-    Args:
-        df (pd.DataFrame): DataFrame to save
-        output_path (str): Output file path
+    def __init__(self):
+        super().__init__()
+        self.bq_client = bigquery.Client(project=GCP_PROJECT)
 
-    Returns:
-        None
-    """
-    # Create parent directories if they don't exist
-    output_path = Path(output_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    def get_data(self, data_type, start_date, end_date):
+        """Query BigQuery and return DataFrame for the given date range.
 
-    # Save to CSV
-    df.to_csv(output_path, index=False)
-    print(f"✅ Saved {len(df)} rows to {output_path}")
+        BQ returns date columns as datetime natively: no extra parsing needed.
 
+        Args:
+            data_type (str): 'weather', 'airqual', or 'processed'
+            start_date (str): Start date (YYYY-MM-DD)
+            end_date (str): End date (YYYY-MM-DD)
 
-def load_data_local(filepath, source: str):
-    """
-    Load a CSV file and parse the date column.
+        Returns:
+            pd.DataFrame
+        """
+        if data_type not in ["weather", "airqual", "processed"]:
+            raise ValueError(f"data_type must be 'weather', 'airqual', or 'processed', got '{data_type}'")
 
-    Args:
-        filepath (str): Path to the CSV file.
-        source (str): Either 'weather' or 'airqual'.
+        dataset = BQ_DATASET_RAW if data_type in ["weather", "airqual"] else BQ_DATASET_PROCESSED
+        full_table_name = f"{GCP_PROJECT}.{dataset}.{data_type}"
 
-    Returns:
-        pd.DataFrame: Loaded DataFrame with a parsed 'date' column.
-    """
-    filepath = Path(filepath)
-    if not filepath.exists():
-        raise FileNotFoundError(f"❌ File not found: {filepath}")
+        query = f"""
+            SELECT *
+            FROM `{full_table_name}`
+            WHERE date BETWEEN '{start_date}' AND '{end_date}'
+            ORDER BY date
+        """
 
-    df = pd.read_csv(filepath)
+        df = self.bq_client.query(query).result().to_dataframe()
+        print(f"✅ Loaded {len(df)} rows from {full_table_name} ({start_date} → {end_date})")
+        return df
 
-    if source == "weather":
-        df["date"] = pd.to_datetime(df["date"])
+    def save_data(self, data, data_type, start_date, end_date):
+        """Save DataFrame to BigQuery using DELETE + WRITE_APPEND.
 
-    elif source == "airqual":
-        if "date_from_local" not in df.columns:
-            raise KeyError("❌ Column 'date_from_local' not found in airqual dataframe")
-        df["date"] = pd.to_datetime(df["date_from_local"].str[:10])
+        Deletes existing rows for the date range first to prevent duplicates,
+        then appends all rows. The DELETE is wrapped in try/except to handle
+        the first-run case where the table does not exist yet.
 
-    else:
-        raise ValueError(f"❌ source must be 'weather' or 'airqual', got '{source}'")
+        Args:
+            data (pd.DataFrame): DataFrame to save
+            data_type (str): 'weather', 'airqual', or 'processed'
+            start_date (str): Start date (YYYY-MM-DD) — used in DELETE filter
+            end_date (str): End date (YYYY-MM-DD) — used in DELETE filter
+        """
+        if data_type not in ["weather", "airqual", "processed"]:
+            raise ValueError(f"data_type must be 'weather', 'airqual', or 'processed', got '{data_type}'")
 
-    print(f"✅ Loaded {len(df)} rows from {filepath}")
-    return df
+        dataset = BQ_DATASET_RAW if data_type in ["weather", "airqual"] else BQ_DATASET_PROCESSED
+        full_table_name = f"{GCP_PROJECT}.{dataset}.{data_type}"
 
+        # Delete rows in the date range before inserting to avoid duplicates on re-run
+        try:
+            self.bq_client.query(f"""
+                DELETE FROM `{full_table_name}`
+                WHERE date BETWEEN '{start_date}' AND '{end_date}'
+            """).result()
+        except Exception:
+            pass  # table doesn't exist yet on first run: skip delete
 
+        job_config = bigquery.LoadJobConfig(
+            write_disposition="WRITE_APPEND",
+            autodetect=True  # infer schema from DataFrame; creates table if it doesn't exist
+        )
+        self.bq_client.load_table_from_dataframe(data, full_table_name, job_config=job_config).result()
+        print(f"✅ Saved {len(data)} rows to {full_table_name} ({start_date} → {end_date})")
 
 
 
