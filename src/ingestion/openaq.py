@@ -290,7 +290,7 @@ class OpenAQClient:
 
         # Combine all cities data
         all_aq_measurements = pd.concat(all_cities, ignore_index=True)
-
+        all_aq_measurements["date"] = pd.to_datetime(all_aq_measurements["date_from_local"].str[:10])
 
         print(f"\n{'=' * 50}")
         print(f"✓ Ingestion complete!")

@@ -206,7 +206,8 @@ class OpenWeatherClient:
             return pd.DataFrame()
 
         all_cities_df = pd.concat(all_dataframes, ignore_index=True)
-
+        all_cities_df["date"] = pd.to_datetime(all_cities_df["date"])
+        print("date columns converted to datetime")
         print(f"\n{'=' * 50}")
         print(f"✓ Ingestion complete!")
         print(f"  {len(all_dataframes)} cities processed")
