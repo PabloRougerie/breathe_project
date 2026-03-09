@@ -28,7 +28,7 @@ def run_training(X, y, dataset_metadata):
     Returns:
       trained_model, model_version (str)
     """
-    mlflow.end_run()
+    mlflow.end_run() #check that no runs is still on
 
     with mlflow.start_run() as run:
 

@@ -6,7 +6,6 @@ import time
 import os
 from tqdm.auto import tqdm
 from pathlib import Path
-from src.utils import save_data_local
 from src.utils import *
 from src.params import *
 
@@ -164,7 +163,7 @@ class OpenWeatherClient:
 
     def get_all_data(self, cities, start_date, end_date):
         """
-        Fetch weather data for multiple cities and save to CSV.
+        Fetch weather data for multiple cities.
 
         Args:
             cities (dict): Cities with coordinates {"city_name": {"lat": float, "lon": float}}
@@ -212,12 +211,5 @@ class OpenWeatherClient:
         print(f"✓ Ingestion complete!")
         print(f"  {len(all_dataframes)} cities processed")
         print(f"  {len(all_cities_df)} total measurements")
-
-        # Save to disk
-        if self.storage == "local":
-            save_data_local(all_cities_df, LOCAL_RAW_DIR)
-            print(f"  Saved to: {LOCAL_RAW_DIR}")
-        else:
-            pass  # TODO: load to BQ
 
         return all_cities_df

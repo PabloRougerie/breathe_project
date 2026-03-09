@@ -297,14 +297,4 @@ class OpenAQClient:
         print(f"  {len(all_cities)} cities processed")
         print(f"  {len(all_aq_measurements)} total measurements")
 
-        # Save to disk
-        if self.storage == "local":
-            save_data_local(df=all_aq_measurements, output_path=LOCAL_RAW_DIR)
-            print(f"  Saved to: {LOCAL_RAW_DIR}")
-        else:
-            # TODO add function to load to bq
-            pass
-
-
-
         return all_aq_measurements
