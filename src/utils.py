@@ -167,10 +167,14 @@ class GCSStorageClient(StorageClient):
 
         # Delete rows in the date range before inserting to avoid duplicates on re-run
         try:
-            self.bq_client.query(f"""
+            delete_job = self.bq_client.query(f"""
                 DELETE FROM `{full_table_name}`
                 WHERE date BETWEEN '{start_date}' AND '{end_date}'
-            """).result()
+            """)
+            delete_job.result()  # wait for completion; dml_stats lives on the job, not the result
+            deleted = delete_job.dml_stats.deleted_row_count
+            if deleted > 0:
+                print(f"Deleted {deleted} rows from {full_table_name} ({start_date} → {end_date})")
         except Exception:
             pass  # table doesn't exist yet on first run: skip delete
 

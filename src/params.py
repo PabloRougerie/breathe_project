@@ -125,7 +125,7 @@ SELECTED_FEATURES = [
     "pressure",
     "wind_direction",
     "lag_3",
-    "humidity",
+    "humidity"
 ]
 
 
