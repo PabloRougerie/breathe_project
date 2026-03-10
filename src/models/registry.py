@@ -55,7 +55,7 @@ def promote_challenger(client):
         #tag it as "archived"
         client.set_model_version_tag(name= MLFLOW_MODEL_NAME, version= version_champ, key= "status", value= "archived")
 
-        #remove its "champion" tag
+        # remove its "alias" version tag (MLflow alias is reassigned automatically)
         client.delete_model_version_tag(name=MLFLOW_MODEL_NAME, version=version_champ, key="alias")
         print(f"   archived previous champion v{version_champ}")
 
@@ -64,7 +64,7 @@ def promote_challenger(client):
 
     # get version of the current challenger
     version_chall = client.get_model_version_by_alias(name= MLFLOW_MODEL_NAME, alias= "challenger").version
-    # set its alias as champion. automatically removes that alias from old model
+    # set its alias as champion.
     client.set_registered_model_alias(name= MLFLOW_MODEL_NAME,
                                       alias= "champion",
                                       version= version_chall)
@@ -72,6 +72,6 @@ def promote_challenger(client):
     # remove the alias "challenger"
     client.delete_registered_model_alias(name=MLFLOW_MODEL_NAME, alias="challenger")
 
-    #ovewrite the "challenger" tag into "champion"
+    # overwrite the "alias" version tag from "challenger" to "champion"
     client.set_model_version_tag(name= MLFLOW_MODEL_NAME, version= version_chall, key= "alias", value= "champion")
     print(f"✅ Challenger v{version_chall} promoted to champion")

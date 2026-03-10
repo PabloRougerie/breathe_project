@@ -2,129 +2,308 @@ from pathlib import Path
 import pandas as pd
 import json
 import os
+from src.params import *
+from google.cloud import bigquery
 
 from abc import ABC, abstractmethod
 from google.cloud import storage
 
-def save_data_local(df, output_path):
-    """
-    Save DataFrame to local CSV file.
-
-    Args:
-        df (pd.DataFrame): DataFrame to save
-        output_path (str): Output file path
-
-    Returns:
-        None
-    """
-    # Create parent directories if they don't exist
-    output_path = Path(output_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Save to CSV
-    df.to_csv(output_path, index=False)
-    print(f"✅ Saved {len(df)} rows to {output_path}")
-
-
-def load_data_local(filepath, source: str):
-    """
-    Load a CSV file and parse the date column.
-
-    Args:
-        filepath (str): Path to the CSV file.
-        source (str): Either 'weather' or 'airqual'.
-
-    Returns:
-        pd.DataFrame: Loaded DataFrame with a parsed 'date' column.
-    """
-    filepath = Path(filepath)
-    if not filepath.exists():
-        raise FileNotFoundError(f"❌ File not found: {filepath}")
-
-    df = pd.read_csv(filepath)
-
-    if source == "weather":
-        df["date"] = pd.to_datetime(df["date"])
-
-    elif source == "airqual":
-        if "date_from_local" not in df.columns:
-            raise KeyError("❌ Column 'date_from_local' not found in airqual dataframe")
-        df["date"] = pd.to_datetime(df["date_from_local"].str[:10])
-
-    else:
-        raise ValueError(f"❌ source must be 'weather' or 'airqual', got '{source}'")
-
-    print(f"✅ Loaded {len(df)} rows from {filepath}")
-    return df
-
-
-
 
 class StorageClient(ABC):
+    """Abstract interface for structured DataFrame persistence (raw and processed data).
+
+    Concrete implementations handle local CSV files or BigQuery tables.
+    All methods are keyed by:
+        - data_type: 'weather', 'airqual', or 'processed'
+        - start_date / end_date: date range strings (YYYY-MM-DD)
+
+    File/table naming convention:
+        Local : {base_storage_dir}/raw/{data_type}_{start_date}_{end_date}.csv
+                {base_storage_dir}/processed/{data_type}_{start_date}_{end_date}.csv
+        BQ    : {GCP_PROJECT}.{BQ_DATASET_RAW}.{data_type}
+                {GCP_PROJECT}.{BQ_DATASET_PROCESSED}.{data_type}
+    """
 
     def __init__(self):
         pass
 
     @abstractmethod
-    def read(self, path):
+    def save_data(self, data: pd.DataFrame, data_type: str, start_date: str, end_date: str):
+        """Persist a DataFrame for the given data type and date range."""
         pass
 
     @abstractmethod
-    def write(self,data, path):
+    def get_data(self, data_type: str, start_date: str, end_date: str) -> pd.DataFrame:
+        """Load and return a DataFrame for the given data type and date range."""
         pass
 
-    @abstractmethod
-    def exists(self,path):
-        pass
 
 class LocalStorageClient(StorageClient):
-        def __init__(self, cache_dir):
-            super().__init__()
-            self.cache_dir = cache_dir
+    """StorageClient backed by the local filesystem.
 
-        def write(self, data, file_name):
+    Saves and loads CSV files under:
+        {base_storage_dir}/raw/      for 'weather' and 'airqual'
+        {base_storage_dir}/processed/ for 'processed'
 
-            path = Path(self.cache_dir) / file_name #create all path until json file
-            os.makedirs(path.parent, exist_ok= True) #create all dir from root to json file
-            with open(path, "w") as f: #write within the path including a json, meaning that it will crate a json file
-                json.dump(data, f)
+    Args:
+        base_storage_dir (Path | str): Root data directory, e.g. PROJECT_ROOT / 'data'
+    """
 
-        def read(self, file_name):
-            path = Path(self.cache_dir) / file_name
-            with open(path, "r") as f:
-                return json.load(f)
+    def __init__(self, base_storage_dir):
+        super().__init__()
+        self.base_storage_dir = base_storage_dir
 
+    def get_data(self, data_type, start_date, end_date):
+        """Load CSV from local filesystem and return as DataFrame.
 
-        def exists(self, file_name):
-            path = Path(self.cache_dir) / file_name
-            if os.path.exists(path):
-                return True
-            else:
-                return False
+        The 'date' column is parsed as datetime on load (csv stores dates as strings).
 
+        Args:
+            data_type (str): 'weather', 'airqual', or 'processed'
+            start_date (str): Start date (YYYY-MM-DD) — part of the filename
+            end_date (str): End date (YYYY-MM-DD) — part of the filename
+
+        Returns:
+            pd.DataFrame
+        """
+        if data_type not in ["weather", "airqual", "processed"]:
+            raise ValueError(f"data_type must be 'weather', 'airqual', or 'processed', got '{data_type}'")
+
+        subfolder = "raw" if data_type in ["weather", "airqual"] else "processed"
+        path = Path(self.base_storage_dir) / subfolder / f"{data_type}_{start_date}_{end_date}.csv"
+
+        if not path.exists():
+            raise FileNotFoundError(f"❌ File not found: {path}")
+
+        df = pd.read_csv(path)
+        df["date"] = pd.to_datetime(df["date"])  # csv stores dates as strings, reparse to datetime
+
+        print(f"✅ Loaded {len(df)} rows from {path}")
+        return df
+
+    def save_data(self, data, data_type, start_date, end_date):
+        """Save DataFrame as CSV to local filesystem.
+
+        Args:
+            data (pd.DataFrame): DataFrame to save
+            data_type (str): 'weather', 'airqual', or 'processed'
+            start_date (str): Start date (YYYY-MM-DD) — included in filename
+            end_date (str): End date (YYYY-MM-DD) — included in filename
+        """
+        if data_type not in ["weather", "airqual", "processed"]:
+            raise ValueError(f"data_type must be 'weather', 'airqual', or 'processed', got '{data_type}'")
+
+        subfolder = "raw" if data_type in ["weather", "airqual"] else "processed"
+        path = Path(self.base_storage_dir) / subfolder / f"{data_type}_{start_date}_{end_date}.csv"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        data.to_csv(path, index=False)
+        print(f"✅ Saved {len(data)} rows to {path}")
 
 
 class GCSStorageClient(StorageClient):
+    """StorageClient backed by Google BigQuery.
 
-        def __init__(self, bucket_name):
-            super().__init__()
+    Raw data ('weather', 'airqual') is stored in BQ_DATASET_RAW.
+    Processed data ('processed') is stored in BQ_DATASET_PROCESSED.
+    Table name == data_type (e.g. project.raw_dataset.weather).
 
-            self.client = storage.Client()
-            self.bucket = self.client.bucket(bucket_name)
+    save_data uses DELETE + WRITE_APPEND to avoid duplicates:
+    existing rows for the date range are deleted before inserting new ones.
+    This makes the operation idempotent (safe to re-run on the same period).
+    """
 
-        def read(self,blob_name):
-            blob = self.bucket.blob(blob_name)
-            return json.loads(blob.download_as_text())
+    def __init__(self):
+        super().__init__()
+        self.bq_client = bigquery.Client(project=GCP_PROJECT)
 
-        def write(self, data, blob_name):
-            blob = self.bucket.blob(blob_name)
-            blob.upload_from_string(data= json.dumps(data), content_type="application/json")
+    def get_data(self, data_type, start_date, end_date):
+        """Query BigQuery and return DataFrame for the given date range.
 
-        def exists(self, blob_name):
+        BQ returns date columns as datetime natively: no extra parsing needed.
 
-            blob = self.bucket.blob(blob_name)
+        Args:
+            data_type (str): 'weather', 'airqual', or 'processed'
+            start_date (str): Start date (YYYY-MM-DD)
+            end_date (str): End date (YYYY-MM-DD)
 
-            return blob.exists()
+        Returns:
+            pd.DataFrame
+        """
+        if data_type not in ["weather", "airqual", "processed"]:
+            raise ValueError(f"data_type must be 'weather', 'airqual', or 'processed', got '{data_type}'")
+
+        dataset = BQ_DATASET_RAW if data_type in ["weather", "airqual"] else BQ_DATASET_PROCESSED
+        full_table_name = f"{GCP_PROJECT}.{dataset}.{data_type}"
+
+        query = f"""
+            SELECT *
+            FROM `{full_table_name}`
+            WHERE date BETWEEN '{start_date}' AND '{end_date}'
+            ORDER BY date
+        """
+
+        df = self.bq_client.query(query).result().to_dataframe()
+        print(f"✅ Loaded {len(df)} rows from {full_table_name} ({start_date} → {end_date})")
+        return df
+
+    def save_data(self, data, data_type, start_date, end_date):
+        """Save DataFrame to BigQuery using DELETE + WRITE_APPEND.
+
+        Deletes existing rows for the date range first to prevent duplicates,
+        then appends all rows. The DELETE is wrapped in try/except to handle
+        the first-run case where the table does not exist yet.
+
+        Args:
+            data (pd.DataFrame): DataFrame to save
+            data_type (str): 'weather', 'airqual', or 'processed'
+            start_date (str): Start date (YYYY-MM-DD) — used in DELETE filter
+            end_date (str): End date (YYYY-MM-DD) — used in DELETE filter
+        """
+        if data_type not in ["weather", "airqual", "processed"]:
+            raise ValueError(f"data_type must be 'weather', 'airqual', or 'processed', got '{data_type}'")
+
+        dataset = BQ_DATASET_RAW if data_type in ["weather", "airqual"] else BQ_DATASET_PROCESSED
+        full_table_name = f"{GCP_PROJECT}.{dataset}.{data_type}"
+
+        # Delete rows in the date range before inserting to avoid duplicates on re-run
+        try:
+            delete_job = self.bq_client.query(f"""
+                DELETE FROM `{full_table_name}`
+                WHERE date BETWEEN '{start_date}' AND '{end_date}'
+            """)
+            delete_job.result()  # wait for completion; dml_stats lives on the job, not the result
+            deleted = delete_job.dml_stats.deleted_row_count
+            if deleted > 0:
+                print(f"Deleted {deleted} rows from {full_table_name} ({start_date} → {end_date})")
+        except Exception:
+            pass  # table doesn't exist yet on first run: skip delete
+
+        job_config = bigquery.LoadJobConfig(
+            write_disposition="WRITE_APPEND",
+            autodetect=True  # infer schema from DataFrame; creates table if it doesn't exist
+        )
+        self.bq_client.load_table_from_dataframe(data, full_table_name, job_config=job_config).result()
+        print(f"✅ Saved {len(data)} rows to {full_table_name} ({start_date} → {end_date})")
+
+
+
+
+class CacheClient(ABC):
+    """Abstract interface for JSON cache storage.
+
+    All methods use a logical file_name / prefix of the form:
+        {city}/{api_source}/{filename}.json
+    e.g. "Paris/weather/weather_2023-01-01.json"
+         "Paris/sensor_12345.json"
+
+    Concrete implementations resolve this logical name to a physical
+    location (local filesystem or GCS bucket).
+    """
+
+    def __init__(self):
+        pass
+
+    @abstractmethod
+    def read(self, file_name: str) -> dict:
+        """Load and return a JSON file as a dict. file_name: logical path relative to root."""
+        pass
+
+    @abstractmethod
+    def write(self, data: dict, file_name: str):
+        """Serialize data as JSON and write to file_name."""
+        pass
+
+    @abstractmethod
+    def exists(self, file_name: str) -> bool:
+        """Return True if the file at file_name exists."""
+        pass
+
+    @abstractmethod
+    def list(self, prefix: str) -> list:
+        """Return list of file_names (logical paths) matching the given prefix.
+        e.g. prefix='Paris/weather' returns ['Paris/weather/weather_2023-01-01.json', ...]
+        Returned names are directly passable to read().
+        """
+        pass
+
+
+class LocalCacheClient(CacheClient):
+    """CacheClient backed by the local filesystem.
+
+    Args:
+        cache_dir (Path): Absolute base directory for all cache files.
+                          e.g. PROJECT_ROOT / 'data' / 'cache'
+
+    Full path resolution: cache_dir / file_name
+        e.g. /project/data/cache/Paris/weather/weather_2023-01-01.json
+    """
+
+    def __init__(self, cache_dir):
+        super().__init__()
+        self.cache_dir = cache_dir
+
+    def write(self, data, file_name):
+        # full path = cache_dir / {city}/{api_source}/{filename}.json
+        path = Path(self.cache_dir) / file_name
+        os.makedirs(path.parent, exist_ok=True)
+        with open(path, "w") as f:
+            json.dump(data, f)
+
+    def read(self, file_name):
+        path = Path(self.cache_dir) / file_name
+        with open(path, "r") as f:
+            return json.load(f)
+
+    def exists(self, file_name):
+        path = Path(self.cache_dir) / file_name
+        if os.path.exists(path):
+            return True
+        else:
+            return False
+
+    def list(self, prefix):
+        # prefix resolves to a directory e.g. cache_dir/Paris/weather/
+        # glob("*.json") lists files in that dir only (non-recursive)
+        # relative_to(cache_dir) gives back the logical file_name passable to read()
+        path = Path(self.cache_dir) / prefix
+        file_list = [str(file.relative_to(self.cache_dir)) for file in path.glob("*.json")]
+        return file_list
+
+
+class GCSCacheClient(CacheClient):
+    """CacheClient backed by Google Cloud Storage.
+
+    Args:
+        bucket_name (str): GCS bucket name (from BUCKET_NAME in params).
+
+    Blob name == file_name (logical path), e.g.:
+        'Paris/weather/weather_2023-01-01.json'
+        'Paris/sensor_12345.json'
+    """
+
+    def __init__(self, bucket_name):
+        super().__init__()
+        self.client = storage.Client()
+        self.bucket = self.client.bucket(bucket_name)
+
+    def read(self, blob_name):
+        blob = self.bucket.blob(blob_name)
+        return json.loads(blob.download_as_text()) #download
+
+    def write(self, data, blob_name):
+        blob = self.bucket.blob(blob_name)
+        blob.upload_from_string(data=json.dumps(data), content_type="application/json")
+
+    def exists(self, blob_name):
+        blob = self.bucket.blob(blob_name)
+        return blob.exists()
+
+    def list(self, prefix):
+        # list_blobs returns all blobs whose name starts with prefix
+        # blob.name is the full blob path = logical file_name passable to read()
+        blobs = self.client.list_blobs(BUCKET_NAME, prefix=prefix)
+        blob_list = [blob.name for blob in blobs]
+        return blob_list
 
 
 

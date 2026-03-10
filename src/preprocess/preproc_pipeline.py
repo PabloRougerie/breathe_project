@@ -18,12 +18,19 @@ class PreprocessConfig:
     approach: str = DEFAULT_APPROACH
     limit: int = LIMIT
     horizon: int = HORIZON
-    features: list = field(default_factory=lambda: SELECTED_FEATURES)  #to allow custolmization of list between instances
+    features: list = field(default_factory=lambda: SELECTED_FEATURES)  # mutable default: field() required to avoid shared state between instances
 
 
 def preprocessing_pipeline(airqual_df, weather_df, config: PreprocessConfig = PreprocessConfig()):
+    """Run the full preprocessing pipeline on raw airqual and weather DataFrames.
 
-    print(f"⚙️  Starting preprocessing — airqual: {len(airqual_df)} rows, weather: {len(weather_df)} rows")
+    Returns:
+        dataset_metadata (dict): date_start, date_end, n_rows, n_features, list_features
+        X (pd.DataFrame): feature matrix (config.features only)
+        y (pd.Series): target
+    """
+
+    print(f"⚙️  Starting preprocessing airqual: {len(airqual_df)} rows, weather: {len(weather_df)} rows")
 
     #------------------
     # INITIAL CLEANING
@@ -83,15 +90,12 @@ def preprocessing_pipeline(airqual_df, weather_df, config: PreprocessConfig = Pr
     }
 
     #split data
-    X = data.drop(columns = ["target", "date"])
-    X = X[config.features]
-
-    y = data["target"]
+    data = data[config.features + ["date", "target"]]
 
     # metadata reflects the features actually passed to the model
-    dataset_metadata["n_features"] = len(X.columns)
-    dataset_metadata["list_features"] = list(X.columns)
+    dataset_metadata["n_features"] = len(config.features)
+    dataset_metadata["list_features"] = list(config.features)
 
     print(f"✅ Preprocessing done — {dataset_metadata['n_rows']} rows, {dataset_metadata['n_features']} features | {dataset_metadata['date_start']} → {dataset_metadata['date_end']}")
 
-    return dataset_metadata, X, y
+    return dataset_metadata, data

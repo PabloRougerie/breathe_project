@@ -14,8 +14,12 @@ class OpenAQClient:
 
     Args:
         api_key (str): OpenAQ API key (if None, reads from API_AQ env var)
-        radius (int): Default search radius in meters (default: 5000)
+        radius (int): Search radius in meters (default: 7000)
+        max_retry (int): Max API retry attempts (default: 3)
+        storage (str): 'local' or 'gcp' — determines which CacheClient is used for cache
+        min_coverage (float): Minimum data coverage ratio to keep a sensor (default: 0.75)
 
+    Cache file format: {city}/sensor_{sensor_id}.json
     """
 
     def __init__(self, api_key=None, radius=7000, max_retry=3, storage= "local", min_coverage=0.75):
@@ -33,9 +37,9 @@ class OpenAQClient:
             raise ValueError(f"storage is either 'local' or on 'gcp', got {storage} instead")
 
         if storage == "local":
-            self.storage_client = LocalStorageClient(cache_dir= CACHE_DIR)
+            self.storage_client = LocalCacheClient(cache_dir= CACHE_DIR)
         else:
-            self.storage_client = GCSStorageClient(bucket_name= BUCKET_NAME)
+            self.storage_client = GCSCacheClient(bucket_name= BUCKET_NAME)
 
 
     def _get_headers(self):
@@ -115,7 +119,7 @@ class OpenAQClient:
             sensor_id (int): Sensor ID
             start_date (str): Start date (YYYY-MM-DD)
             end_date (str): End date (YYYY-MM-DD)
-            cache_dir (str): Directory to cache sensor data
+            file_name (str): Logical cache path (e.g. city/sensor_{id}.json)
 
         Returns:
             dict: JSON response with daily measurements
@@ -144,7 +148,6 @@ class OpenAQClient:
             if response.status_code == 200:
                 results = response.json()
                 print(f"  └─ Sensor {sensor_id}: fetched from API")
-                print(results)
 
                 # Check 1: empty JSON?
                 if not results.get("results") or len(results.get("results")) == 0:
@@ -185,7 +188,7 @@ class OpenAQClient:
             sensor_ids (list): List of sensor IDs to fetch
             start_date (str): Start date (YYYY-MM-DD)
             end_date (str): End date (YYYY-MM-DD)
-            cache_dir (str): Directory to cache sensor data
+            city (str): City name, used to scope cache file names
 
         Returns:
             pd.DataFrame: Aggregated measurements from all sensors
@@ -196,7 +199,7 @@ class OpenAQClient:
         # Fetch raw data for each sensor
         for i, sensor_id in enumerate(sensor_ids, 1):
             print(f"  [{i}/{len(sensor_ids)}] Sensor {sensor_id}")
-            file_name = f"{city}/sensor_{sensor_id}.json"
+            file_name = f"{city}/air_qual/sensor_{sensor_id}.json"
             sensor_data[sensor_id] = self.fetch_one_sensor_data(sensor_id, start_date, end_date, file_name = file_name)
 
         all_dataframes = []
@@ -248,7 +251,6 @@ class OpenAQClient:
             end_date (str): Data fetch end date (YYYY-MM-DD)
             start_project_date (str): Project start date for sensor filtering (YYYY-MM-DD)
             end_project_date (str): Project end date for sensor filtering (YYYY-MM-DD)
-            output_path (str): Output CSV path (default: "../data/raw/airqual.csv")
 
         Returns:
             pd.DataFrame: Combined PM2.5 measurements for all cities
@@ -288,21 +290,11 @@ class OpenAQClient:
 
         # Combine all cities data
         all_aq_measurements = pd.concat(all_cities, ignore_index=True)
-
+        all_aq_measurements["date"] = pd.to_datetime(all_aq_measurements["date_from_local"].str[:10])
 
         print(f"\n{'=' * 50}")
         print(f"✓ Ingestion complete!")
         print(f"  {len(all_cities)} cities processed")
         print(f"  {len(all_aq_measurements)} total measurements")
-
-        # Save to disk
-        if self.storage == "local":
-            save_data_local(df=all_aq_measurements, output_path= LOCAL_RAW_DIR)
-            print(f"  Saved to: {output_path}")
-        else:
-            # TODO add function to load to bq
-            pass
-
-
 
         return all_aq_measurements
