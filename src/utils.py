@@ -286,16 +286,16 @@ class GCSCacheClient(CacheClient):
         self.client = storage.Client()
         self.bucket = self.client.bucket(bucket_name)
 
-    def read(self, blob_name):
-        blob = self.bucket.blob(blob_name)
-        return json.loads(blob.download_as_text()) #download
+    def read(self, file_name):
+        blob = self.bucket.blob(file_name)
+        return json.loads(blob.download_as_text())
 
-    def write(self, data, blob_name):
-        blob = self.bucket.blob(blob_name)
+    def write(self, data, file_name):
+        blob = self.bucket.blob(file_name)
         blob.upload_from_string(data=json.dumps(data), content_type="application/json")
 
-    def exists(self, blob_name):
-        blob = self.bucket.blob(blob_name)
+    def exists(self, file_name):
+        blob = self.bucket.blob(file_name)
         return blob.exists()
 
     def list(self, prefix):

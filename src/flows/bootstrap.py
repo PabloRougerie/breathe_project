@@ -6,25 +6,30 @@ from src.utils import *
 from src.ingestion.openaq import OpenAQClient
 from src.ingestion.openweather import OpenWeatherClient
 from src.preprocess.preproc_pipeline import preprocessing_pipeline
-from src.models.model_pipeline import run_training, run_evaluating
+from src.models.model_pipeline import run_training, run_evaluating, setup_mlflow
 
 
 # =============================================================================
 # TASKS
-# GCSStorageClient is instantiated inside tasks (not passed as arg) to avoid
-# serialization issues with Prefect task runners.
+# Important: GCSStorageClient is always instantiated *inside* tasks, never
+# passed as an argument. Passing a client object would cause Prefect errors.
 # =============================================================================
 
 @task
-def train_set_ingestion(start_date, end_date):
+def ingestion(start_date, end_date):
     """Fetch air quality and weather data from APIs for the given date range.
 
-    Uses cloud cache (GCS) to avoid redundant API calls.
+    Both clients use GCS as a JSON cache: if a given day's data is already
+    cached, the API call is skipped. Only missing days trigger new API calls.
+
+    Args:
+        start_date (str): Start date (YYYY-MM-DD)
+        end_date (str): End date (YYYY-MM-DD)
 
     Returns:
-        tuple: (airqual_df, weather_df)
+        tuple: (airqual_df, weather_df) as raw DataFrames with a 'date' column
     """
-    aq_client = OpenAQClient(api_key=API_AQ, storage="cloud")
+    aq_client = OpenAQClient(api_key=API_AQ, storage="gcp")
     airqual_df = aq_client.get_data(
         cities=CITIES,
         start_date=start_date,
@@ -32,7 +37,7 @@ def train_set_ingestion(start_date, end_date):
         start_project_date=START_PROJECT_DATE_STR,
         end_project_date=END_PROJECT_DATE_STR
     )
-    weather_client = OpenWeatherClient(api_key=API_OW, storage="cloud")
+    weather_client = OpenWeatherClient(api_key=API_OW, storage="gcp")
     weather_df = weather_client.get_all_data(
         cities=CITIES,
         start_date=start_date,
@@ -42,8 +47,28 @@ def train_set_ingestion(start_date, end_date):
 
 
 @task
+def check_data_exist(data_type, start_date, end_date):
+    """Check whether a BigQuery table already contains data for the given date range.
+
+    Args:
+        data_type (str): 'airqual', 'weather', or 'processed'
+        start_date (str): Start date (YYYY-MM-DD)
+        end_date (str): End date (YYYY-MM-DD)
+
+    Returns:
+        bool: True if data exists in BQ for that range, False otherwise
+    """
+    df = GCSStorageClient().get_data(
+        data_type=data_type,
+        start_date=start_date,
+        end_date=end_date
+    )
+    return not df.empty
+
+
+@task
 def upload_data(df, data_type, start_date, end_date):
-    """Save a DataFrame to BigQuery (raw or processed dataset).
+    """Save a DataFrame to BigQuery (idempotent: DELETE then WRITE_APPEND).
 
     Args:
         df (pd.DataFrame): Data to upload
@@ -90,13 +115,17 @@ def preprocess_raw_data(airqual_df, weather_df):
 
 @task
 def train_model(data, dataset_metadata):
-    """Train model on the given dataset and register it in MLflow.
+    """Train a model on the given dataset and register it in MLflow.
 
-    Splits data into X/y internally. In the bootstrap flow, the model
-    is registered as champion directly.
+    X/y split is done here: 'date' and 'target' columns are excluded from features.
+    Registration logic (champion vs challenger) is handled inside run_training.
+
+    Args:
+        data (pd.DataFrame): Processed dataset including 'date' and 'target' columns
+        dataset_metadata (dict): Metadata logged to MLflow alongside the model
 
     Returns:
-        tuple: (trained_model, model_version)
+        tuple: (trained_model, model_version str)
     """
     X = data.drop(columns=["target", "date"])
     y = data["target"]
@@ -108,10 +137,10 @@ def evaluate_model(data, dataset_metadata, alias, eval_mode):
     """Evaluate a registered model and log metrics to MLflow.
 
     Args:
-        data (pd.DataFrame): Dataset with features, date and target columns
+        data (pd.DataFrame): Dataset with features, 'date' and 'target' columns
         dataset_metadata (dict): Metadata about the evaluation dataset
-        alias (str): MLflow model alias to evaluate ('champion' or 'challenger')
-        eval_mode (str): Evaluation context label (e.g. 'test_set', 'train_set')
+        alias (str): MLflow model alias to load ('champion' or 'challenger')
+        eval_mode (str): Evaluation context label logged to MLflow (e.g. 'test_set')
 
     Returns:
         float: RMSE score
@@ -129,71 +158,132 @@ def evaluate_model(data, dataset_metadata, alias, eval_mode):
 
 # =============================================================================
 # SUBFLOWS
-# Each subflow handles one stage of the pipeline with a failsafe:
-# if data is not passed (e.g. after a crash), it is reloaded from BigQuery.
+# Each subflow handles one logical stage of the pipeline.
+#
+# Ingestion subflow: has a BQ existence check + force override.
+# Preprocess / train / eval subflows: have a fallback (data reloaded from BQ
+# if not passed in-memory, e.g. when running a subflow standalone after a crash).
 # =============================================================================
 
 @flow
-def bootstrap_ingestion_subflow(start_date, end_date):
+def bootstrap_ingestion_subflow(start_date, end_date, force=False):
     """Fetch raw data from APIs and upload to BigQuery.
 
-    airqual and weather uploads run in parallel.
+    If data already exists in BQ for the requested date range and force=False,
+    the API ingestion is skipped and data is loaded directly from BQ.
+    Use force=True to re-ingest and overwrite existing data (e.g. after a
+    data quality issue or a change in ingestion logic).
+
+    airqual and weather checks / downloads run in parallel.
+
+    Args:
+        start_date (str): Start date (YYYY-MM-DD)
+        end_date (str): End date (YYYY-MM-DD)
+        force (bool): If True, always re-ingest from APIs regardless of BQ state
 
     Returns:
         tuple: (airqual_df, weather_df)
     """
-    ingestion_f = train_set_ingestion.submit(start_date=start_date, end_date=end_date)
-    airqual_df, weather_df = ingestion_f.result()
+    if force:
+        # Bypass BQ check: always fetch from APIs and overwrite BQ
+        airqual_df, weather_df = ingestion.submit(
+            start_date=start_date, end_date=end_date
+        ).result()
 
-    # upload airqual and weather in parallel
-    upload_airqual_f = upload_data.submit(airqual_df, data_type="airqual",
-                                          start_date=start_date, end_date=end_date)
-    upload_weather_f = upload_data.submit(weather_df, data_type="weather",
-                                          start_date=start_date, end_date=end_date)
-    upload_airqual_f.result()
-    upload_weather_f.result()
+        upload_data.submit(airqual_df, data_type="airqual",
+                           start_date=start_date, end_date=end_date).result()
+        upload_data.submit(weather_df, data_type="weather",
+                           start_date=start_date, end_date=end_date).result()
+
+        return airqual_df, weather_df
+
+    # Check BQ in parallel for both data types
+    airqual_exist_f = check_data_exist.submit(
+        data_type="airqual", start_date=start_date, end_date=end_date
+    )
+    weather_exist_f = check_data_exist.submit(
+        data_type="weather", start_date=start_date, end_date=end_date
+    )
+
+    if airqual_exist_f.result() and weather_exist_f.result():
+        # Data already in BQ: load directly, skip API calls and upload
+        airqual_df = download_data.submit(
+            data_type="airqual", start_date=start_date, end_date=end_date
+        ).result()
+        weather_df = download_data.submit(
+            data_type="weather", start_date=start_date, end_date=end_date
+        ).result()
+    else:
+        # Data missing in BQ: fetch from APIs and upload
+        airqual_df, weather_df = ingestion.submit(
+            start_date=start_date, end_date=end_date
+        ).result()
+
+        upload_data.submit(airqual_df, data_type="airqual",
+                           start_date=start_date, end_date=end_date).result()
+        upload_data.submit(weather_df, data_type="weather",
+                           start_date=start_date, end_date=end_date).result()
 
     return airqual_df, weather_df
 
 
 @flow
 def bootstrap_preprocess_subflow(start_date, end_date, airqual_df=None, weather_df=None):
-    """Preprocess raw data and upload processed dataset to BigQuery.
+    """Preprocess raw data and upload the processed dataset to BigQuery.
 
     Fallback: if airqual_df or weather_df are None (e.g. subflow run standalone
     after a crash), raw data is reloaded from BigQuery before preprocessing.
+    The preprocessed dataset (features + date + target) is always uploaded to BQ.
+
+    Args:
+        start_date (str): Start date (YYYY-MM-DD)
+        end_date (str): End date (YYYY-MM-DD)
+        airqual_df (pd.DataFrame, optional): Raw air quality data passed in-memory
+        weather_df (pd.DataFrame, optional): Raw weather data passed in-memory
 
     Returns:
         tuple: (dataset_metadata dict, processed DataFrame)
     """
     if airqual_df is None or weather_df is None:
-        airqual_f = download_data.submit(data_type="airqual",
-                                         start_date=start_date, end_date=end_date)
-        weather_f = download_data.submit(data_type="weather",
-                                         start_date=start_date, end_date=end_date)
+        # Fallback: reload raw data from BQ in parallel
+        airqual_f = download_data.submit(
+            data_type="airqual", start_date=start_date, end_date=end_date
+        )
+        weather_f = download_data.submit(
+            data_type="weather", start_date=start_date, end_date=end_date
+        )
         airqual_df, weather_df = airqual_f.result(), weather_f.result()
 
-    preproc_f = preprocess_raw_data.submit(airqual_df, weather_df)
-    dataset_metadata, data = preproc_f.result()
+    dataset_metadata, data = preprocess_raw_data.submit(airqual_df, weather_df).result()
 
-    upload_data.submit(df=data, data_type="processed",
-                       start_date=start_date, end_date=end_date).result()
+    upload_data.submit(
+        df=data, data_type="processed", start_date=start_date, end_date=end_date
+    ).result()
 
     return dataset_metadata, data
 
 
 @flow
 def bootstrap_train_subflow(start_date, end_date, data=None, dataset_metadata=None):
-    """Train model on the processed dataset and register it in MLflow.
+    """Train a model on the processed dataset and register it in MLflow.
 
     Fallback: if data is None, processed dataset is reloaded from BigQuery.
     If dataset_metadata is None, it is reconstructed from the loaded DataFrame.
+
+    Args:
+        start_date (str): Start date (YYYY-MM-DD)
+        end_date (str): End date (YYYY-MM-DD)
+        data (pd.DataFrame, optional): Processed dataset passed in-memory
+        dataset_metadata (dict, optional): Dataset metadata passed in-memory
     """
     if data is None:
-        data = download_data.submit(data_type="processed",
-                                    start_date=start_date, end_date=end_date).result()
+        # Fallback: reload processed data from BQ
+        data = download_data.submit(
+            data_type="processed", start_date=start_date, end_date=end_date
+        ).result()
 
     if dataset_metadata is None:
+        # Reconstruct metadata from the DataFrame if not passed
         dataset_metadata = {
             "date_start":    str(data["date"].min()),
             "date_end":      str(data["date"].max()),
@@ -208,90 +298,118 @@ def bootstrap_train_subflow(start_date, end_date, data=None, dataset_metadata=No
 @flow
 def bootstrap_eval_subflow(start_date, end_date, alias, eval_mode,
                            data=None, dataset_metadata=None):
-    """Evaluate the registered model on the given dataset and log metrics to MLflow.
+    """Evaluate a registered model on the given dataset and log metrics to MLflow.
 
     Fallback: if data is None, processed dataset is reloaded from BigQuery.
     If dataset_metadata is None, it is reconstructed from the loaded DataFrame.
 
     Args:
+        start_date (str): Start date (YYYY-MM-DD)
+        end_date (str): End date (YYYY-MM-DD)
         alias (str): MLflow model alias to evaluate ('champion' or 'challenger')
-        eval_mode (str): Evaluation context label (e.g. 'test_set')
+        eval_mode (str): Evaluation context label logged to MLflow (e.g. 'test_set')
+        data (pd.DataFrame, optional): Processed dataset passed in-memory
+        dataset_metadata (dict, optional): Dataset metadata passed in-memory
     """
     if data is None:
-        data = download_data.submit(data_type="processed",
-                                    start_date=start_date, end_date=end_date).result()
+        # Fallback: reload processed data from BQ
+        data = download_data.submit(
+            data_type="processed", start_date=start_date, end_date=end_date
+        ).result()
 
     if dataset_metadata is None:
+        # Reconstruct metadata from the DataFrame if not passed
         dataset_metadata = {
             "date_start":    str(data["date"].min()),
             "date_end":      str(data["date"].max()),
             "n_rows":        len(data),
             "n_features":    len(data.columns) - 2,
-            "list_features": [f for f in data.columns if f not in ["date", "target"]],
+            "list_features": [feat for feat in data.columns if feat not in ["date", "target"]],
         }
 
-    evaluate_model.submit(data, dataset_metadata,
-                          alias=alias, eval_mode=eval_mode).result()
+    evaluate_model.submit(
+        data, dataset_metadata, alias=alias, eval_mode=eval_mode
+    ).result()
 
 
 # =============================================================================
 # MASTERFLOWS
-# Top-level flows that orchestrate subflows sequentially.
-# Data is passed in-memory between subflows to avoid redundant BQ round-trips.
+# Entry points for the bootstrap pipeline. Orchestrate subflows sequentially.
+#
+# Data is passed in-memory between subflows to avoid redundant BQ round-trips:
+#   ingestion → preprocess → train/eval
+#
+# The `force` parameter is propagated to the ingestion subflow only, since
+# preprocess and train/eval always re-run on whatever data is passed to them.
 # =============================================================================
 
 @flow
-def bootstrap_train_masterflow():
-    """Bootstrap training flow: ingest historical data, preprocess, and train first model.
+def bootstrap_train_masterflow(force=False):
+    """Bootstrap training pipeline: ingest → preprocess → train.
 
-    Runs sequentially: ingestion, preprocess, train.
-    Data is passed in-memory between stages (no BQ round-trips between subflows).
-    The trained model is registered as champion in MLflow.
+    Intended for the first run of the project. Ingests historical data
+    (START_TRAIN_DATE_STR to END_TRAIN_DATE_STR), preprocesses it, trains
+    a model, and registers it as champion in MLflow.
+
+    Args:
+        force (bool): If True, re-ingest data from APIs even if it already
+                      exists in BigQuery. Default: False.
     """
-    airqual_df, weather_df = bootstrap_ingestion_subflow.submit(
-        start_date=START_TRAIN_DATE_STR,
-        end_date=END_TRAIN_DATE_STR
-    ).result()
+    setup_mlflow()
 
-    dataset_metadata, data = bootstrap_preprocess_subflow.submit(
+    airqual_df, weather_df = bootstrap_ingestion_subflow(
+        start_date=START_TRAIN_DATE_STR,
+        end_date=END_TRAIN_DATE_STR,
+        force=force
+    )
+
+    dataset_metadata, data = bootstrap_preprocess_subflow(
         start_date=START_TRAIN_DATE_STR,
         end_date=END_TRAIN_DATE_STR,
         airqual_df=airqual_df,
         weather_df=weather_df
-    ).result()
+    )
 
-    bootstrap_train_subflow.submit(
+    bootstrap_train_subflow(
         start_date=START_TRAIN_DATE_STR,
         end_date=END_TRAIN_DATE_STR,
         data=data,
         dataset_metadata=dataset_metadata
-    ).result()
+    )
 
 
 @flow
-def bootstrap_eval_masterflow():
-    """Bootstrap evaluation flow: ingest test data, preprocess, and evaluate champion model.
+def bootstrap_eval_masterflow(force=False):
+    """Bootstrap evaluation pipeline: ingest → preprocess → evaluate champion.
 
-    Runs sequentially: ingestion, preprocess,eval.
-    Evaluates the champion model on the test set and logs metrics to MLflow.
+    Ingests test set data (START_TEST_DATE_STR to END_TEST_DATE_STR),
+    preprocesses it, and evaluates the current champion model.
+    Metrics are logged to MLflow.
+
+    Args:
+        force (bool): If True, re-ingest data from APIs even if it already
+                      exists in BigQuery. Default: False.
     """
-    airqual_df, weather_df = bootstrap_ingestion_subflow.submit(
-        start_date=START_TEST_DATE_STR,
-        end_date=END_TEST_DATE_STR
-    ).result()
+    setup_mlflow()
 
-    dataset_metadata, data = bootstrap_preprocess_subflow.submit(
+    airqual_df, weather_df = bootstrap_ingestion_subflow(
+        start_date=START_TEST_DATE_STR,
+        end_date=END_TEST_DATE_STR,
+        force=force
+    )
+
+    dataset_metadata, data = bootstrap_preprocess_subflow(
         start_date=START_TEST_DATE_STR,
         end_date=END_TEST_DATE_STR,
         airqual_df=airqual_df,
         weather_df=weather_df
-    ).result()
+    )
 
-    bootstrap_eval_subflow.submit(
+    bootstrap_eval_subflow(
         start_date=START_TEST_DATE_STR,
         end_date=END_TEST_DATE_STR,
         alias="champion",
         eval_mode="test_set",
         data=data,
         dataset_metadata=dataset_metadata
-    ).result()
+    )
