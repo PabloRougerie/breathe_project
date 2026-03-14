@@ -1,5 +1,6 @@
 import pandas as pd
 from prefect import task, flow
+from google.api_core.exceptions import NotFound
 
 from src.params import *
 from src.utils import *
@@ -43,6 +44,7 @@ def ingestion(start_date, end_date):
         start_date=start_date,
         end_date=end_date
     )
+    #TODO log shape df
     return airqual_df, weather_df
 
 
@@ -58,12 +60,17 @@ def check_data_exist(data_type, start_date, end_date):
     Returns:
         bool: True if data exists in BQ for that range, False otherwise
     """
-    df = GCSStorageClient().get_data(
-        data_type=data_type,
-        start_date=start_date,
-        end_date=end_date
-    )
-    return not df.empty
+    try:
+        df = GCSStorageClient().get_data(
+            data_type=data_type,
+            start_date=start_date,
+            end_date=end_date
+        )
+        #TODO log table found
+        return not df.empty
+    except NotFound:
+        return False
+    #TODO log table NOT found
 
 
 @task
@@ -129,6 +136,7 @@ def train_model(data, dataset_metadata):
     """
     X = data.drop(columns=["target", "date"])
     y = data["target"]
+    #TODO log model version + fit time
     return run_training(X, y, dataset_metadata=dataset_metadata)
 
 
@@ -147,8 +155,10 @@ def evaluate_model(data, dataset_metadata, alias, eval_mode):
     """
     X = data.drop(columns=["target", "date"])
     y_true = data["target"]
+    #TODO log alias and eval mode
+    #TODO log rmse
     return run_evaluating(
-        X=X,
+        X_val=X,
         y_true=y_true,
         dataset_metadata=dataset_metadata,
         alias=alias,

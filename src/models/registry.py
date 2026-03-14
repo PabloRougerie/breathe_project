@@ -40,13 +40,13 @@ def register_model(client, version, alias: str):
 
 
 
-def promote_challenger(client):
+def promote_challenger():
     """Promote the current 'challenger' to 'champion'.
 
     Tags the existing champion as 'archived' and removes its alias before promoting.
     Safe on first promotion (no existing champion).
     """
-
+    client = MlflowClient()
 
     try:
         # if works: there's a champ: need to archive it

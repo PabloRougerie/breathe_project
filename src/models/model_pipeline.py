@@ -154,6 +154,17 @@ def run_evaluating(X_val, y_true, dataset_metadata, model=None, model_version=No
             "date_end":    dataset_metadata["date_end"],
         })
 
+        # Store score as reference on the model version for future self_compare (drift detection)
+        if eval_mode == "test_set":
+            client = MlflowClient()
+            client.set_model_version_tag(
+                name=MLFLOW_MODEL_NAME,
+                version=str(model_version),
+                key="reference_rmse",
+                value=str(score)
+            )
+            print(f"   reference_rmse tagged on model v{model_version}")
+
         print(f"✅ Evaluation done — RMSE: {round(score, 4)} | model v{model_version} | {eval_mode}")
 
     return score
