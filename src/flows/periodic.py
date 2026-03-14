@@ -1,7 +1,7 @@
 import pandas as pd
 import mlflow
 from mlflow.tracking import MlflowClient
-from prefect import task, flow
+from prefect import task, flow, get_run_logger
 from google.api_core.exceptions import NotFound
 
 from src.params import *
@@ -17,8 +17,8 @@ from src.models.evaluate import self_compare, cross_compare
 
 # =============================================================================
 # TASKS
-# Important: GCSStorageClient is always instantiated *inside* tasks, never
-# passed as an argument. Passing a client object would cause Prefect errors.
+# Important: GCSStorageClient is instantiated *inside* tasks.
+# Passing a client object would cause Prefect errors.
 # =============================================================================
 
 @task
@@ -42,10 +42,22 @@ def ingestion(start_date, end_date):
         start_date=start_date,
         end_date=end_date
     )
-    #TODO log shape df
+    logger = get_run_logger()
+    logger.info(f"ingested {len(airqual_df)} rows for air_quality")
+    logger.info(f"ingested {len(weather_df)} rows for weather")
     return airqual_df, weather_df
 
+@task
+def delete_cache(data_type):
+    """ data_type: "airqual", "weather", "processed" """
+    cache_client = GCSCacheClient(bucket_name= BUCKET_NAME)
 
+    if data_type == "airqual":
+
+        for city in CITIES.keys():
+            cache_files = cache_client.list(prefix= f"{city}/airqual/")
+            if cache_files:
+                cache_client.delete(cache_files)
 
 
 @task
@@ -67,22 +79,30 @@ def check_data_exist(data_type, start_date, end_date):
 @task
 def upload_data(df, data_type, start_date, end_date):
     """Save a DataFrame to BigQuery (idempotent: DELETE existing rows then WRITE_APPEND)."""
-    GCSStorageClient().save_data(
+    full_table_name = GCSStorageClient().save_data(
         data=df,
         data_type=data_type,
         start_date=start_date,
         end_date=end_date
     )
+    logger = get_run_logger()
+    logger.info(f"✅ Saved {len(df)} rows to {full_table_name} ({start_date} → {end_date})")
 
 
 @task
 def download_data(data_type, start_date, end_date):
     """Load a DataFrame from BigQuery for the given date range."""
-    return GCSStorageClient().get_data(
+
+    df, full_table_name= GCSStorageClient().get_data(
         data_type=data_type,
         start_date=start_date,
         end_date=end_date
-    )
+        )
+    logger = get_run_logger()
+    logger.info(f"✅ Loaded {len(df)} rows from {full_table_name} ({start_date} → {end_date})")
+
+
+    return df
 
 
 @task
@@ -103,8 +123,10 @@ def train_model(data, dataset_metadata):
     """
     X = data.drop(columns=["target", "date"])
     y = data["target"]
-    #TODO log model version + fit time
-    trained_model, model_version = run_training(X, y, dataset_metadata=dataset_metadata)
+
+    trained_model, model_version, assigned_alias = run_training(X, y, dataset_metadata=dataset_metadata)
+    logger = get_run_logger()
+    logger.info(f"train model version {model_version} under alias {assigned_alias}")
     return trained_model, model_version
 
 
@@ -116,8 +138,7 @@ def evaluate_model(data, dataset_metadata, alias, eval_mode, model=None, model_v
     """
     X = data.drop(columns=["target", "date"])
     y_true = data["target"]
-    #TODO log alias and eval mode
-    #TODO log rmse
+
     score= run_evaluating(
         X_val=X,
         y_true=y_true,
@@ -127,6 +148,8 @@ def evaluate_model(data, dataset_metadata, alias, eval_mode, model=None, model_v
         model = model,
         model_version= model_version
     )
+    logger = get_run_logger()
+    logger.info(f"{alias} rmse: {score} (model: {model_version}, eval mode: {eval_mode})")
     return score
 
 @task
@@ -135,11 +158,18 @@ def self_compare_champion(new_batch_rmse):
     client = MlflowClient()
     champion = client.get_model_version_by_alias(name=MLFLOW_MODEL_NAME, alias="champion")
     ref_rmse = float(champion.tags["reference_rmse"])
-    return self_compare(score_ref=ref_rmse, score_new=new_batch_rmse)
+
+    logger= get_run_logger()
+    logger.info(f"champion ref rmse: {ref_rmse}. champion batch rmse: {new_batch_rmse} ({(1 - new_batch_rmse / ref_rmse)*100: .2f}% perf change)")
+
+    is_drift = self_compare(score_ref=ref_rmse, score_new=new_batch_rmse)
+    return is_drift
 
 @task
 def cross_compare_challenger(challenger_score, champion_score):
     """Return True if challenger RMSE is better (lower) than champion RMSE."""
+    logger = get_run_logger()
+    logger.info(f"champion rmse: {champion_score}. challenger rmse: {challenger_score}")
     return cross_compare(score_old=champion_score, score_new=challenger_score)
 
 @task
@@ -153,11 +183,11 @@ def promote_better_model():
 # =============================================================================
 # SUBFLOWS
 # Each subflow handles one logical stage of the periodic pipeline.
-#
 # ingestion_subflow   : BQ existence check + force override
 # preprocess_subflow  : fallback reload from BQ if data not passed in-memory
 # train_subflow       : triggered on drift; uses HISTORICAL dates, not fresh batch
 # eval_and_drift_check_subflow : evaluates champion + self-compare; returns (score, drift_detected)
+# eval and promote: evalutes challenger of last month data and promote if better
 # =============================================================================
 
 @flow
@@ -207,6 +237,7 @@ def ingestion_subflow(start_date, end_date, force=False):
         upload_data.submit(weather_df, data_type="weather",
                            start_date=start_date, end_date=end_date).result()
 
+    delete_cache.submit(data_type= "airqual").result()
     return airqual_df, weather_df
 
 
@@ -355,16 +386,21 @@ def periodic_monitoring_masterflow():
       3. If drift: retrain challenger on shifted historical window,
          evaluate on fresh batch, promote if better
     """
+    setup_mlflow()
+    logger = get_run_logger()
+
     # TODO: compute from current date (first/last day of previous month)
-    batch_start = None
-    batch_end   = None
+    batch_start = "2025-07-01"
+    batch_end   = "2025-07-31"
 
     # --- Ingest and preprocess the fresh batch ---
+    logger.info("Ingestion")
     airqual_df, weather_df = ingestion_subflow(batch_start, batch_end)
     batch_metadata, batch_data = preprocess_subflow(batch_start, batch_end,
                                                     airqual_df, weather_df)
 
     # --- Evaluate champion on fresh batch; champion loaded from registry ---
+    logger.info(f"Evaluating champion on batch {batch_start} to {batch_end}")
     score_champion, is_drift = eval_and_drift_check_subflow(
         start_date=batch_start,
         end_date=batch_end,
@@ -376,17 +412,20 @@ def periodic_monitoring_masterflow():
 
     # --- No drift: nothing to do ---
     if not is_drift:
-        print("No drift detected — champion remains the serving model")
+        logger.info("No drift detected")
 
     # --- Drift detected: retrain challenger on shifted historical window ---
     else:
-        # TODO: compute from END_TRAIN_DATE_STR + batch duration (same window, shifted 1 month)
-        train_start = None
-        train_end   = None
+        logger.warning(f"Drift detected")
+
+        # TODO: compute dynamically (same duration as bootstrap window, shifted 1 month forward)
+        train_start = "2023-07-01"
+        train_end   = "2025-06-30"
 
         # Data already in BQ (processed at bootstrap) → preprocess_subflow falls back to download
-        train_metadata, train_data = preprocess_subflow(train_start, train_end)
 
+        train_metadata, train_data = preprocess_subflow(train_start, train_end)
+        logger.info(f"training new model on {train_start} to {train_end}")
         challenger_model, challenger_version = train_subflow(
             start_date=train_start,
             end_date=train_end,
@@ -396,6 +435,7 @@ def periodic_monitoring_masterflow():
 
         # Evaluate challenger on fresh batch (becomes its reference test set),
         # cross-compare with champion score, promote if better
+
         eval_and_promote_subflow(
             start_date=batch_start,
             end_date=batch_end,

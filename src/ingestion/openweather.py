@@ -178,9 +178,7 @@ class OpenWeatherClient:
 
         # Fetch data for each city
         for city, coords in cities.items():
-            print(f"\n{'='*50}")
             print(f"Processing {city}...")
-            print(f"{'='*50}")
 
 
 
@@ -207,10 +205,6 @@ class OpenWeatherClient:
 
         all_cities_df = pd.concat(all_dataframes, ignore_index=True)
         all_cities_df["date"] = pd.to_datetime(all_cities_df["date"])
-        print("date columns converted to datetime")
-        print(f"\n{'=' * 50}")
-        print(f"✓ Ingestion complete!")
-        print(f"  {len(all_dataframes)} cities processed")
-        print(f"  {len(all_cities_df)} total measurements")
+        print(f"✅ OpenWeather ingestion complete — {len(all_dataframes)} cities, {len(all_cities_df)} measurements")
 
         return all_cities_df

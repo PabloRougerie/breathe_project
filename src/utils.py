@@ -143,8 +143,8 @@ class GCSStorageClient(StorageClient):
         """
 
         df = self.bq_client.query(query).result().to_dataframe()
-        print(f"✅ Loaded {len(df)} rows from {full_table_name} ({start_date} → {end_date})")
-        return df
+
+        return df, full_table_name
 
     def save_data(self, data, data_type, start_date, end_date):
         """Save DataFrame to BigQuery using DELETE + WRITE_APPEND.
@@ -183,7 +183,8 @@ class GCSStorageClient(StorageClient):
             autodetect=True  # infer schema from DataFrame; creates table if it doesn't exist
         )
         self.bq_client.load_table_from_dataframe(data, full_table_name, job_config=job_config).result()
-        print(f"✅ Saved {len(data)} rows to {full_table_name} ({start_date} → {end_date})")
+
+        return full_table_name
 
 
 
@@ -226,6 +227,10 @@ class CacheClient(ABC):
         """
         pass
 
+    @abstractmethod
+    def delete(self, cache_list: list):
+        pass
+
 
 class LocalCacheClient(CacheClient):
     """CacheClient backed by the local filesystem.
@@ -262,12 +267,16 @@ class LocalCacheClient(CacheClient):
             return False
 
     def list(self, prefix):
-        # prefix resolves to a directory e.g. cache_dir/Paris/weather/
+        # prefix = a directory: cache_dir/Paris/weather/
         # glob("*.json") lists files in that dir only (non-recursive)
         # relative_to(cache_dir) gives back the logical file_name passable to read()
         path = Path(self.cache_dir) / prefix
         file_list = [str(file.relative_to(self.cache_dir)) for file in path.glob("*.json")]
         return file_list
+
+
+    def delete(self, cache_list):
+        pass
 
 
 class GCSCacheClient(CacheClient):
@@ -304,6 +313,11 @@ class GCSCacheClient(CacheClient):
         blobs = self.client.list_blobs(BUCKET_NAME, prefix=prefix)
         blob_list = [blob.name for blob in blobs]
         return blob_list
+
+    def delete(self, cache_list):
+        blob_list = [self.bucket.blob(file) for file in cache_list]
+        self.bucket.delete_blobs(blob_list)
+        print(f"blobs deleted")
 
 
 

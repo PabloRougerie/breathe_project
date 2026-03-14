@@ -30,8 +30,6 @@ def preprocessing_pipeline(airqual_df, weather_df, config: PreprocessConfig = Pr
         y (pd.Series): target
     """
 
-    print(f"⚙️  Starting preprocessing airqual: {len(airqual_df)} rows, weather: {len(weather_df)} rows")
-
     #------------------
     # INITIAL CLEANING
     #------------------
@@ -54,7 +52,6 @@ def preprocessing_pipeline(airqual_df, weather_df, config: PreprocessConfig = Pr
     #-------
 
     data = merge_source_df(df_airqual= airqual_ready, df_weather= weather_ready)
-    print(f"   rows after merge: {len(data)}")
     data = single_gaps_imputer(df= data, limit= config.limit)
 
     #------------------
@@ -69,16 +66,13 @@ def preprocessing_pipeline(airqual_df, weather_df, config: PreprocessConfig = Pr
     #------------------
 
     data = feature_engineering(data, approach= config.approach)
-    print(f"   features generated ({config.approach}): {len(data.columns) - 2} features")
 
     #------------------
     # FINAL CLEANING
     #------------------
 
-    rows_before = len(data)
     data = drop_na(data)
     data = drop_preprocess_cols(data)
-    print(f"   rows dropped (dropna + preprocess cols): {rows_before - len(data)} → {len(data)} remaining")
 
     #extract metadata for logging
     dataset_metadata = {

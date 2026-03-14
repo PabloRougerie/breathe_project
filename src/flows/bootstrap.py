@@ -47,6 +47,19 @@ def ingestion(start_date, end_date):
     #TODO log shape df
     return airqual_df, weather_df
 
+@task
+def delete_cache(data_type):
+    """ data_type: "airqual", "weather", "processed" """
+    cache_client = GCSCacheClient(bucket_name= BUCKET_NAME)
+
+    if data_type == "airqual":
+        for city in CITIES.keys():
+            cache_files = cache_client.list(prefix= f"{city}/airqual/")
+            if cache_files:
+                cache_client.delete(cache_files)
+        print("files deleted")
+
+
 
 @task
 def check_data_exist(data_type, start_date, end_date):
@@ -234,6 +247,7 @@ def bootstrap_ingestion_subflow(start_date, end_date, force=False):
         upload_data.submit(weather_df, data_type="weather",
                            start_date=start_date, end_date=end_date).result()
 
+    delete_cache.submit(data_type= "airqual").result()
     return airqual_df, weather_df
 
 

@@ -18,7 +18,7 @@ def self_compare(score_ref, score_new, margin=DRIFT_THRESHOLD):
     Returns True if drift detected (score_new >= score_ref * (1 + margin)).
     """
     if score_new >= score_ref * (1 + margin):
-        print("drift detected...")
+
         return True
     return False
 

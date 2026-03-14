@@ -95,12 +95,6 @@ class OpenAQClient:
         full_time_loc = [loc for loc in alive_loc
                          if pd.to_datetime(loc["datetimeFirst"]["utc"]) <= start_project_date_dt]
 
-        print("  " + "=" * 46)
-        print(f"  Monitor-grade locations: {len(monitor_loc)}")
-        print(f"  Active at end date: {len(alive_loc)}")
-        print(f"  Full coverage: {len(full_time_loc)}")
-        print("  " + "=" * 46)
-
         # Extract PM2.5 sensor IDs from filtered locations
         sensor_ids = []
         for loc in full_time_loc:
@@ -108,7 +102,6 @@ class OpenAQClient:
                 if sensor["parameter"]["id"] == 2:  # PM2.5
                     sensor_ids.append(sensor["id"])
 
-        print(f"  PM2.5 sensors found: {len(sensor_ids)}")
         return sensor_ids
 
     def fetch_one_sensor_data(self, sensor_id, start_date, end_date, file_name):
@@ -127,9 +120,7 @@ class OpenAQClient:
         # Check cache first
 
 
-        if self.storage_client.exists(file_name= file_name):
-            print(f"  └─ Sensor {sensor_id}: using cached data")
-
+        if self.storage_client.exists(file_name=file_name):
             return self.storage_client.read(file_name)
 
 
@@ -147,7 +138,6 @@ class OpenAQClient:
 
             if response.status_code == 200:
                 results = response.json()
-                print(f"  └─ Sensor {sensor_id}: fetched from API")
 
                 # Check 1: empty JSON?
                 if not results.get("results") or len(results.get("results")) == 0:
@@ -194,12 +184,9 @@ class OpenAQClient:
             pd.DataFrame: Aggregated measurements from all sensors
         """
         sensor_data = {}
-        print(f"  Fetching data for {len(sensor_ids)} sensors...")
 
-        # Fetch raw data for each sensor
-        for i, sensor_id in enumerate(sensor_ids, 1):
-            print(f"  [{i}/{len(sensor_ids)}] Sensor {sensor_id}")
-            file_name = f"{city}/air_qual/sensor_{sensor_id}.json"
+        for sensor_id in sensor_ids:
+            file_name = f"{city}/airqual/sensor_{sensor_id}.json"
             sensor_data[sensor_id] = self.fetch_one_sensor_data(sensor_id, start_date, end_date, file_name = file_name)
 
         all_dataframes = []
@@ -292,9 +279,6 @@ class OpenAQClient:
         all_aq_measurements = pd.concat(all_cities, ignore_index=True)
         all_aq_measurements["date"] = pd.to_datetime(all_aq_measurements["date_from_local"].str[:10])
 
-        print(f"\n{'=' * 50}")
-        print(f"✓ Ingestion complete!")
-        print(f"  {len(all_cities)} cities processed")
-        print(f"  {len(all_aq_measurements)} total measurements")
+        print(f"✅ OpenAQ ingestion complete — {len(all_cities)} cities, {len(all_aq_measurements)} measurements")
 
         return all_aq_measurements
