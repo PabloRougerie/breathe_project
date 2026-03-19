@@ -191,8 +191,9 @@ class OpenWeatherClient:
                 end_date=end_date
             )
 
-            # Load cached data
+            # Load all cached data then filter to requested window
             df = self.merge_cached_data(city)
+            df = df[(df["date"] >= pd.to_datetime(start_date)) & (df["date"] <= pd.to_datetime(end_date))]
 
             if not df.empty:
                 df["city"] = city
