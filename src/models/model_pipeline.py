@@ -145,4 +145,4 @@ def run_evaluating(X_val, y_true, dataset_metadata, model=None, model_version=No
 
         print(f"✅ Evaluation done — RMSE: {round(score, 4)} | model v{model_version} | {eval_mode}")
 
-    return score
+    return score, model_version

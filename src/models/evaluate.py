@@ -17,7 +17,7 @@ def self_compare(score_ref, score_new, margin=DRIFT_THRESHOLD):
     score_new: current model score on the new batch of data.
     Returns True if drift detected (score_new >= score_ref * (1 + margin)).
     """
-    if score_new >= score_ref * (1 + margin):
+    if score_new >= score_ref * (1 + margin/100):
 
         return True
     return False
@@ -30,7 +30,7 @@ def cross_compare(score_old, score_new, margin=IMPROVEMENT_THRESHOLD):
     score_new: new model score on that same batch.
     Returns True if the new model improved (score_new <= score_old * (1 - margin)).
     """
-    if score_new <= (1 - margin) * score_old:
+    if score_new <= (1 - margin/100) * score_old:
         print("new model improved performance")
         return True
     return False
