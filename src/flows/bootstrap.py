@@ -1,5 +1,5 @@
 import pandas as pd
-from prefect import task, flow
+from prefect import task, flow, get_run_logger
 from google.api_core.exceptions import NotFound
 
 from src.params import *
@@ -50,14 +50,17 @@ def ingestion(start_date, end_date):
 @task
 def delete_cache(data_type):
     """ data_type: "airqual", "weather", "processed" """
-    cache_client = GCSCacheClient(bucket_name= BUCKET_NAME)
+    cache_client = GCSCacheClient(bucket_name=BUCKET_NAME)
+    total_deleted = 0
 
     if data_type == "airqual":
         for city in CITIES.keys():
-            cache_files = cache_client.list(prefix= f"{city}/airqual/")
+            cache_files = cache_client.list(prefix=f"{city}/airqual/")
             if cache_files:
-                cache_client.delete(cache_files)
-        print("files deleted")
+                total_deleted += cache_client.delete(cache_files)
+
+    logger = get_run_logger()
+    logger.info(f"Cache cleared — {total_deleted} blobs deleted ({data_type})")
 
 
 
@@ -74,16 +77,14 @@ def check_data_exist(data_type, start_date, end_date):
         bool: True if data exists in BQ for that range, False otherwise
     """
     try:
-        df = GCSStorageClient().get_data(
+        df, _ = GCSStorageClient().get_data(
             data_type=data_type,
             start_date=start_date,
             end_date=end_date
         )
-        #TODO log table found
         return not df.empty
     except NotFound:
         return False
-    #TODO log table NOT found
 
 
 @task
@@ -116,21 +117,25 @@ def download_data(data_type, start_date, end_date):
     Returns:
         pd.DataFrame
     """
-    return GCSStorageClient().get_data(
+    df, _ = GCSStorageClient().get_data(
         data_type=data_type,
         start_date=start_date,
         end_date=end_date
     )
+    return df
 
 
 @task
-def preprocess_raw_data(airqual_df, weather_df):
+def preprocess_raw_data(airqual_df, weather_df, mode="train"):
     """Run the full preprocessing pipeline on raw DataFrames.
+
+    Args:
+        mode (str): 'train' applies sensor filtering; 'eval' skips it.
 
     Returns:
         tuple: (dataset_metadata dict, preprocessed DataFrame with date + target + features)
     """
-    return preprocessing_pipeline(airqual_df=airqual_df, weather_df=weather_df)
+    return preprocessing_pipeline(airqual_df=airqual_df, weather_df=weather_df, mode=mode)
 
 
 @task
@@ -164,19 +169,20 @@ def evaluate_model(data, dataset_metadata, alias, eval_mode):
         eval_mode (str): Evaluation context label logged to MLflow (e.g. 'test_set')
 
     Returns:
-        float: RMSE score
+        tuple: (score: float, model_version: str)
     """
     X = data.drop(columns=["target", "date"])
     y_true = data["target"]
     #TODO log alias and eval mode
     #TODO log rmse
-    return run_evaluating(
+    score, model_version = run_evaluating(
         X_val=X,
         y_true=y_true,
         dataset_metadata=dataset_metadata,
         alias=alias,
         eval_mode=eval_mode
     )
+    return score, model_version
 
 
 # =============================================================================
@@ -252,7 +258,7 @@ def bootstrap_ingestion_subflow(start_date, end_date, force=False):
 
 
 @flow
-def bootstrap_preprocess_subflow(start_date, end_date, airqual_df=None, weather_df=None):
+def bootstrap_preprocess_subflow(start_date, end_date, airqual_df=None, weather_df=None, mode="train"):
     """Preprocess raw data and upload the processed dataset to BigQuery.
 
     Fallback: if airqual_df or weather_df are None (e.g. subflow run standalone
@@ -264,6 +270,7 @@ def bootstrap_preprocess_subflow(start_date, end_date, airqual_df=None, weather_
         end_date (str): End date (YYYY-MM-DD)
         airqual_df (pd.DataFrame, optional): Raw air quality data passed in-memory
         weather_df (pd.DataFrame, optional): Raw weather data passed in-memory
+        mode (str): 'train' applies sensor filtering; 'eval' skips it.
 
     Returns:
         tuple: (dataset_metadata dict, processed DataFrame)
@@ -278,7 +285,7 @@ def bootstrap_preprocess_subflow(start_date, end_date, airqual_df=None, weather_
         )
         airqual_df, weather_df = airqual_f.result(), weather_f.result()
 
-    dataset_metadata, data = preprocess_raw_data.submit(airqual_df, weather_df).result()
+    dataset_metadata, data = preprocess_raw_data.submit(airqual_df, weather_df, mode=mode).result()
 
     upload_data.submit(
         df=data, data_type="processed", start_date=start_date, end_date=end_date
@@ -351,9 +358,11 @@ def bootstrap_eval_subflow(start_date, end_date, alias, eval_mode,
             "list_features": [feat for feat in data.columns if feat not in ["date", "target"]],
         }
 
-    evaluate_model.submit(
+    score, model_version = evaluate_model.submit(
         data, dataset_metadata, alias=alias, eval_mode=eval_mode
     ).result()
+
+    return score, model_version
 
 
 # =============================================================================
@@ -426,10 +435,11 @@ def bootstrap_eval_masterflow(force=False):
         start_date=START_TEST_DATE_STR,
         end_date=END_TEST_DATE_STR,
         airqual_df=airqual_df,
-        weather_df=weather_df
+        weather_df=weather_df,
+        mode="eval"
     )
 
-    bootstrap_eval_subflow(
+    score, model_version= bootstrap_eval_subflow(
         start_date=START_TEST_DATE_STR,
         end_date=END_TEST_DATE_STR,
         alias="champion",
@@ -437,3 +447,14 @@ def bootstrap_eval_masterflow(force=False):
         data=data,
         dataset_metadata=dataset_metadata
     )
+
+    model_metadata = {"model_version": model_version,
+                      "train_start": START_TRAIN_DATE_STR,
+                      "train_end": END_TRAIN_DATE_STR,
+                      "eval_start": START_TEST_DATE_STR,
+                      "eval_end": END_TEST_DATE_STR,
+                      "ref_rmse": score,
+                      "alias": "champion"
+
+                      }
+    MonitoringClient().upsert_model(model_metadata)
