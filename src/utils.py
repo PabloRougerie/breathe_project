@@ -4,6 +4,7 @@ import json
 import os
 from src.params import *
 from google.cloud import bigquery
+from google.api_core.exceptions import NotFound
 
 from abc import ABC, abstractmethod
 from google.cloud import storage
@@ -143,6 +144,7 @@ class GCSStorageClient(StorageClient):
         """
 
         df = self.bq_client.query(query).result().to_dataframe()
+        df["date"] = pd.to_datetime(df["date"])
 
         return df, full_table_name
 
@@ -175,8 +177,10 @@ class GCSStorageClient(StorageClient):
             deleted = delete_job.dml_stats.deleted_row_count
             if deleted > 0:
                 print(f"Deleted {deleted} rows from {full_table_name} ({start_date} → {end_date})")
-        except Exception:
+        except NotFound:
             pass  # table doesn't exist yet on first run: skip delete
+        except Exception as e:
+            raise RuntimeError(f"DELETE failed for {full_table_name} ({start_date} → {end_date}): {e}") from e
 
         job_config = bigquery.LoadJobConfig(
             write_disposition="WRITE_APPEND",
@@ -187,7 +191,63 @@ class GCSStorageClient(StorageClient):
         return full_table_name
 
 
+class MonitoringClient():
 
+    def __init__(self):
+        self.bq_client = bigquery.Client(project=GCP_PROJECT)
+
+    def log_batch(self, batch_data):
+        full_table_name = f"{GCP_PROJECT}.{BQ_DATASET_MONITORING}.batches"
+
+        #define job config to add data
+        job_config = bigquery.LoadJobConfig(
+            write_disposition="WRITE_APPEND",
+            autodetect=True)  # infer schema from DataFrame; creates table if it doesn't exist
+
+        df = pd.DataFrame([batch_data]) #list of dict
+        self.bq_client.load_table_from_dataframe(df, full_table_name, job_config=job_config).result()
+
+    def upsert_model(self, model_data: dict):
+
+
+        full_table_name = f"{GCP_PROJECT}.{BQ_DATASET_MONITORING}.models"
+
+            #delete row of model version v
+        # Delete rows in the date range before inserting to avoid duplicates on re-run
+        try:
+            delete_job = self.bq_client.query(f"""
+                DELETE FROM `{full_table_name}`
+                WHERE model_version = {model_data["model_version"]}
+            """)
+            delete_job.result()  # wait for completion; dml_stats lives on the job, not the result
+            deleted = delete_job.dml_stats.deleted_row_count
+            if deleted == 1:
+                print(f"Deleted model version {model_data["model_version"]} from {full_table_name}")
+            if deleted > 1:
+                print(f"⚠️ More than 1 occurences of model v{model_data["model_version"]} deleted from {full_table_name}")
+
+        except NotFound:
+            pass  # table doesn't exist yet on first run: skip delete
+        except Exception as e:
+            raise RuntimeError(f"DELETE failed for {full_table_name}: {e}") from e
+
+             #define job config to add data
+        job_config = bigquery.LoadJobConfig(
+            write_disposition="WRITE_APPEND",
+            autodetect=True)  # infer schema from DataFrame; creates table if it doesn't exist
+
+        df = pd.DataFrame([model_data]) #list of dict
+        self.bq_client.load_table_from_dataframe(df, full_table_name, job_config=job_config).result()
+
+
+    def update_model_alias(self, model_version, new_alias):
+        full_table_name = f"{GCP_PROJECT}.{BQ_DATASET_MONITORING}.models"
+
+        self.bq_client.query(f"""
+            UPDATE `{full_table_name}`
+            SET alias = '{new_alias}'
+            WHERE model_version = {model_version}
+        """).result()
 
 class CacheClient(ABC):
     """Abstract interface for JSON cache storage.
@@ -317,7 +377,7 @@ class GCSCacheClient(CacheClient):
     def delete(self, cache_list):
         blob_list = [self.bucket.blob(file) for file in cache_list]
         self.bucket.delete_blobs(blob_list)
-        print(f"blobs deleted")
+        return len(blob_list)
 
 
 
