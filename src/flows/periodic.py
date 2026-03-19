@@ -1,12 +1,12 @@
 import pandas as pd
-import mlflow
+import numpy as np
 from mlflow.tracking import MlflowClient
 from prefect import task, flow, get_run_logger
 from google.api_core.exceptions import NotFound
 
 from src.params import *
 from src.utils import *
-from src.models.registry import promote_challenger
+from src.models.registry import promote_challenger, load_model
 from src.ingestion.openaq import OpenAQClient
 from src.ingestion.openweather import OpenWeatherClient
 from src.preprocess.preproc_pipeline import preprocessing_pipeline
@@ -174,6 +174,19 @@ def evaluate_model(data, dataset_metadata, alias, eval_mode, model=None, model_v
     logger = get_run_logger()
     logger.info(f"{alias} — RMSE: {round(score, 4)} ({eval_mode})")
     return score, model_version
+
+@task
+def get_prediction(data):
+    mlflow_client = MlflowClient()
+
+    X = data.drop(columns = ["target", "date"])
+    y_true = data["target"]
+
+    model, predict_model_version = load_model(mlflow_client, alias= "champion")
+    y_pred = model.predict(X)
+
+    return y_true, y_pred, data["city"], data["date"], predict_model_version
+
 
 @task
 def self_compare_champion(new_batch_rmse):
@@ -532,3 +545,7 @@ def periodic_monitoring_masterflow(batch_num: int = 1):
                         }
 
     monitoring_client.log_batch(batch_log)
+    y_true, y_pred, city, date, predict_model_version=  get_prediction(data= batch_data)
+    monitoring_client.log_predict(y_true= np.expm1(y_true), y_pred= np.expm1(y_pred),
+                                  city= city, date= date,
+                                  predict_model_version = predict_model_version)
