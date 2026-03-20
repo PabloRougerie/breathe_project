@@ -185,7 +185,7 @@ def get_prediction(data):
     model, predict_model_version = load_model(mlflow_client, alias= "champion")
     y_pred = model.predict(X)
 
-    return y_true, y_pred, data["city"], data["date"], predict_model_version
+    return y_true, y_pred, data["city"], data["date"].dt.date, predict_model_version
 
 
 @task

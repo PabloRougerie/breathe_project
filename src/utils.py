@@ -250,13 +250,14 @@ class MonitoringClient():
         """).result()
 
 
-    def log_predict(self, y_true, y_pred, model_version, date, city):
+    def log_predict(self, y_true, y_pred, predict_model_version, date, city):
         full_table_name = f"{GCP_PROJECT}.{BQ_DATASET_MONITORING}.predictions"
 
         try:
+
             delete_job = self.bq_client.query(f"""
                 DELETE FROM `{full_table_name}`
-                WHERE date BETWEEN {date.min()} AND {date.max()}
+                WHERE date BETWEEN '{date.min()}' AND '{date.max()}'
             """)
             delete_job.result()  # wait for completion; dml_stats lives on the job, not the result
             deleted = delete_job.dml_stats.deleted_row_count
@@ -274,11 +275,11 @@ class MonitoringClient():
             autodetect=True)  # infer schema from DataFrame; creates table if it doesn't exist
 
         df = pd.DataFrame({
-    "date":            date.values,
+    "date":            date,
     "city":            city.values,
     "y_true":          y_true.values,
     "y_pred":          y_pred,
-    "model_version":   model_version
+    "model_version":   predict_model_version
 })
 
         self.bq_client.load_table_from_dataframe(df, full_table_name, job_config=job_config).result()
