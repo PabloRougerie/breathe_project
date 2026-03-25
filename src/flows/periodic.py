@@ -425,7 +425,7 @@ def eval_and_promote_subflow(start_date, end_date, alias, eval_mode, champion_sc
 # =============================================================================
 
 @flow
-def periodic_monitoring_masterflow(batch_num: int = 1):
+def periodic_monitoring_masterflow(batch_num= None):
     """Periodic monitoring pipeline: ingest new batch, detect drift, retrain if needed.
 
     Steps:
@@ -437,6 +437,11 @@ def periodic_monitoring_masterflow(batch_num: int = 1):
     Args:
         batch_num (int): Batch number from BATCH_SCHEDULE (1-indexed). Controls all dates.
     """
+
+    if batch_num is None:
+        # TODO: replace this temporary fallback with automatic date -> batch mapping.
+        batch_num = 6
+
     if batch_num not in BATCH_SCHEDULE:
         raise ValueError(f"batch_num {batch_num} not found in BATCH_SCHEDULE (valid: {list(BATCH_SCHEDULE.keys())})")
 
@@ -449,9 +454,9 @@ def periodic_monitoring_masterflow(batch_num: int = 1):
 
     # --- Ingest and preprocess the fresh batch ---
     logger.info("Ingestion")
-    airqual_df, weather_df = ingestion_subflow(batch_start, batch_end)
-    dataset_metadata, batch_data = preprocess_subflow(batch_start, batch_end,
-                                                    airqual_df, weather_df, mode="eval")
+    ingestion_subflow(batch_start, batch_end)
+
+    preprocess_subflow(batch_start, batch_end, mode="eval")
 
     # --- Evaluate champion on fresh batch; champion loaded from registry ---
     logger.info(f"Evaluating champion on batch {batch_start} to {batch_end}")
@@ -460,8 +465,6 @@ def periodic_monitoring_masterflow(batch_num: int = 1):
         end_date=batch_end,
         alias="champion",
         eval_mode="fresh_batch",
-        data=batch_data,
-        dataset_metadata=dataset_metadata
     )
 
     logger.info(f"Champion RMSE on fresh batch: {score_champion:.4f}")
@@ -482,15 +485,12 @@ def periodic_monitoring_masterflow(batch_num: int = 1):
         train_start = BATCH_SCHEDULE[batch_num]["train_start"]
         train_end   = BATCH_SCHEDULE[batch_num]["train_end"]
 
-
-        train_metadata, train_data = preprocess_subflow(train_start, train_end, mode="train")
+        preprocess_subflow(train_start, train_end, mode="train")
         logger.info(f"Training new challenger on {train_start} → {train_end}")
 
         challenger_model, challenger_version = train_subflow(
             start_date=train_start,
             end_date=train_end,
-            data=train_data,
-            dataset_metadata=train_metadata
         )
 
         # Evaluate challenger on fresh batch (becomes its reference test set),
@@ -501,19 +501,17 @@ def periodic_monitoring_masterflow(batch_num: int = 1):
             alias="challenger",
             eval_mode="test_set",
             champion_score=score_champion,
-            data=batch_data,
-            dataset_metadata=dataset_metadata,
             model=challenger_model,
             model_version=challenger_version
         )
 
         challenger_metadata = {"model_version": version_challenger,
-                          "train_start": BATCH_SCHEDULE[batch_num]["train_start"] ,
-                          "train_end": BATCH_SCHEDULE[batch_num]["train_end"],
-                          "eval_start": BATCH_SCHEDULE[batch_num]["batch_start"],
-                          "eval_end": BATCH_SCHEDULE[batch_num]["batch_end"],
-                          "ref_rmse": score_challenger
-                          }
+                        "train_start": BATCH_SCHEDULE[batch_num]["train_start"] ,
+                        "train_end": BATCH_SCHEDULE[batch_num]["train_end"],
+                        "eval_start": BATCH_SCHEDULE[batch_num]["batch_start"],
+                        "eval_end": BATCH_SCHEDULE[batch_num]["batch_end"],
+                        "ref_rmse": score_challenger
+                        }
 
 
 
@@ -545,7 +543,9 @@ def periodic_monitoring_masterflow(batch_num: int = 1):
                         }
 
     monitoring_client.log_batch(batch_log)
+    # Fetch processed batch data as a task output (avoid subflow parameters serialization)
+    batch_data = download_data.submit(data_type="processed", start_date=batch_start, end_date=batch_end).result()
     y_true, y_pred, city, date, predict_model_version=  get_prediction(data= batch_data)
     monitoring_client.log_predict(y_true= np.expm1(y_true), y_pred= np.expm1(y_pred),
-                                  city= city, date= date,
-                                  predict_model_version = predict_model_version)
+                                city= city, date= date,
+                                predict_model_version = predict_model_version)

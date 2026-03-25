@@ -199,6 +199,20 @@ class MonitoringClient():
     def log_batch(self, batch_data):
         full_table_name = f"{GCP_PROJECT}.{BQ_DATASET_MONITORING}.batches"
 
+        # delete existing row for that batch  first.
+
+        try:
+            delete_job = self.bq_client.query(f"""
+                DELETE FROM `{full_table_name}`
+                WHERE batch_start = '{batch_data["batch_start"]}'
+                  AND batch_end   = '{batch_data["batch_end"]}'
+            """)
+            delete_job.result()
+        except NotFound:
+            pass  # table doesn't exist yet on first run
+        except Exception as e:
+            raise RuntimeError(f"DELETE failed for {full_table_name}: {e}") from e
+
         #define job config to add data
         job_config = bigquery.LoadJobConfig(
             write_disposition="WRITE_APPEND",
@@ -217,14 +231,14 @@ class MonitoringClient():
         try:
             delete_job = self.bq_client.query(f"""
                 DELETE FROM `{full_table_name}`
-                WHERE model_version = {model_data["model_version"]}
+                WHERE model_version = '{model_data["model_version"]}'
             """)
             delete_job.result()  # wait for completion; dml_stats lives on the job, not the result
             deleted = delete_job.dml_stats.deleted_row_count
             if deleted == 1:
-                print(f"Deleted model version {model_data["model_version"]} from {full_table_name}")
+                print(f"Deleted model version {model_data['model_version']} from {full_table_name}")
             if deleted > 1:
-                print(f"⚠️ More than 1 occurences of model v{model_data["model_version"]} deleted from {full_table_name}")
+                print(f"⚠️ More than 1 occurences of model v{model_data['model_version']} deleted from {full_table_name}")
 
         except NotFound:
             pass  # table doesn't exist yet on first run: skip delete
@@ -246,7 +260,7 @@ class MonitoringClient():
         self.bq_client.query(f"""
             UPDATE `{full_table_name}`
             SET alias = '{new_alias}'
-            WHERE model_version = {model_version}
+            WHERE model_version = '{model_version}'
         """).result()
 
 

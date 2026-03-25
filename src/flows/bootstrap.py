@@ -399,14 +399,11 @@ def bootstrap_train_masterflow(force=False):
     dataset_metadata, data = bootstrap_preprocess_subflow(
         start_date=START_TRAIN_DATE_STR,
         end_date=END_TRAIN_DATE_STR,
-        airqual_df=airqual_df,
-        weather_df=weather_df
     )
 
     bootstrap_train_subflow(
         start_date=START_TRAIN_DATE_STR,
         end_date=END_TRAIN_DATE_STR,
-        data=data,
         dataset_metadata=dataset_metadata
     )
 
@@ -434,8 +431,6 @@ def bootstrap_eval_masterflow(force=False):
     dataset_metadata, data = bootstrap_preprocess_subflow(
         start_date=START_TEST_DATE_STR,
         end_date=END_TEST_DATE_STR,
-        airqual_df=airqual_df,
-        weather_df=weather_df,
         mode="eval"
     )
 
@@ -444,7 +439,6 @@ def bootstrap_eval_masterflow(force=False):
         end_date=END_TEST_DATE_STR,
         alias="champion",
         eval_mode="test_set",
-        data=data,
         dataset_metadata=dataset_metadata
     )
 
