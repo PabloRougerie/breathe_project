@@ -10,9 +10,12 @@ def generate_target(df, horizon = 1):
     df["target"] = df.groupby("city")["pm25_avg"].shift(- horizon)
     return df
 
-def target_transform(df):
-    """ log transform of target column"""
-    df["target"] = np.log1p(df["target"])
+def target_transform(df, columns=None):
+    """Apply log1p transform to one or more columns (e.g. pm25_avg and target)."""
+    if columns is None:
+        columns = ["target"]
+    for col in columns:
+        df[col] = np.log1p(df[col])
     return df
 
 
@@ -67,8 +70,10 @@ def generate_lag_features(df, shifts: dict):
 def feature_engineering(df, approach= "custom"):
     """ wrapper function calling all the feature engineering functions"""
 
-    # generate time features
+    # weather-derived feature
+    df["temp_gradient"] = df["temp_max"] - df["temp_min"]
 
+    # generate time features
     df = month_encoding(df)
     df = day_encoding(df)
 

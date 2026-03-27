@@ -4,6 +4,7 @@ import json
 import os
 from src.params import *
 from google.cloud import bigquery
+from google.api_core.exceptions import NotFound
 
 from abc import ABC, abstractmethod
 from google.cloud import storage
@@ -143,8 +144,9 @@ class GCSStorageClient(StorageClient):
         """
 
         df = self.bq_client.query(query).result().to_dataframe()
-        print(f"✅ Loaded {len(df)} rows from {full_table_name} ({start_date} → {end_date})")
-        return df
+        df["date"] = pd.to_datetime(df["date"])
+
+        return df, full_table_name
 
     def save_data(self, data, data_type, start_date, end_date):
         """Save DataFrame to BigQuery using DELETE + WRITE_APPEND.
@@ -175,16 +177,126 @@ class GCSStorageClient(StorageClient):
             deleted = delete_job.dml_stats.deleted_row_count
             if deleted > 0:
                 print(f"Deleted {deleted} rows from {full_table_name} ({start_date} → {end_date})")
-        except Exception:
+        except NotFound:
             pass  # table doesn't exist yet on first run: skip delete
+        except Exception as e:
+            raise RuntimeError(f"DELETE failed for {full_table_name} ({start_date} → {end_date}): {e}") from e
 
         job_config = bigquery.LoadJobConfig(
             write_disposition="WRITE_APPEND",
             autodetect=True  # infer schema from DataFrame; creates table if it doesn't exist
         )
         self.bq_client.load_table_from_dataframe(data, full_table_name, job_config=job_config).result()
-        print(f"✅ Saved {len(data)} rows to {full_table_name} ({start_date} → {end_date})")
 
+        return full_table_name
+
+
+class MonitoringClient():
+
+    def __init__(self):
+        self.bq_client = bigquery.Client(project=GCP_PROJECT)
+
+    def log_batch(self, batch_data):
+        full_table_name = f"{GCP_PROJECT}.{BQ_DATASET_MONITORING}.batches"
+
+        # delete existing row for that batch  first.
+
+        try:
+            delete_job = self.bq_client.query(f"""
+                DELETE FROM `{full_table_name}`
+                WHERE batch_start = '{batch_data["batch_start"]}'
+                  AND batch_end   = '{batch_data["batch_end"]}'
+            """)
+            delete_job.result()
+        except NotFound:
+            pass  # table doesn't exist yet on first run
+        except Exception as e:
+            raise RuntimeError(f"DELETE failed for {full_table_name}: {e}") from e
+
+        #define job config to add data
+        job_config = bigquery.LoadJobConfig(
+            write_disposition="WRITE_APPEND",
+            autodetect=True)  # infer schema from DataFrame; creates table if it doesn't exist
+
+        df = pd.DataFrame([batch_data]) #list of dict
+        self.bq_client.load_table_from_dataframe(df, full_table_name, job_config=job_config).result()
+
+    def upsert_model(self, model_data: dict):
+
+
+        full_table_name = f"{GCP_PROJECT}.{BQ_DATASET_MONITORING}.models"
+
+            #delete row of model version v
+        # Delete rows in the date range before inserting to avoid duplicates on re-run
+        try:
+            delete_job = self.bq_client.query(f"""
+                DELETE FROM `{full_table_name}`
+                WHERE model_version = '{model_data["model_version"]}'
+            """)
+            delete_job.result()  # wait for completion; dml_stats lives on the job, not the result
+            deleted = delete_job.dml_stats.deleted_row_count
+            if deleted == 1:
+                print(f"Deleted model version {model_data['model_version']} from {full_table_name}")
+            if deleted > 1:
+                print(f"⚠️ More than 1 occurences of model v{model_data['model_version']} deleted from {full_table_name}")
+
+        except NotFound:
+            pass  # table doesn't exist yet on first run: skip delete
+        except Exception as e:
+            raise RuntimeError(f"DELETE failed for {full_table_name}: {e}") from e
+
+             #define job config to add data
+        job_config = bigquery.LoadJobConfig(
+            write_disposition="WRITE_APPEND",
+            autodetect=True)  # infer schema from DataFrame; creates table if it doesn't exist
+
+        df = pd.DataFrame([model_data]) #list of dict
+        self.bq_client.load_table_from_dataframe(df, full_table_name, job_config=job_config).result()
+
+
+    def update_model_alias(self, model_version, new_alias):
+        full_table_name = f"{GCP_PROJECT}.{BQ_DATASET_MONITORING}.models"
+
+        self.bq_client.query(f"""
+            UPDATE `{full_table_name}`
+            SET alias = '{new_alias}'
+            WHERE model_version = '{model_version}'
+        """).result()
+
+
+    def log_predict(self, y_true, y_pred, predict_model_version, date, city):
+        full_table_name = f"{GCP_PROJECT}.{BQ_DATASET_MONITORING}.predictions"
+
+        try:
+
+            delete_job = self.bq_client.query(f"""
+                DELETE FROM `{full_table_name}`
+                WHERE date BETWEEN '{date.min()}' AND '{date.max()}'
+            """)
+            delete_job.result()  # wait for completion; dml_stats lives on the job, not the result
+            deleted = delete_job.dml_stats.deleted_row_count
+
+
+        except NotFound:
+            pass  # table doesn't exist yet on first run: skip delete
+        except Exception as e:
+            raise RuntimeError(f"DELETE failed for {full_table_name}: {e}") from e
+
+
+             #define job config to add data
+        job_config = bigquery.LoadJobConfig(
+            write_disposition="WRITE_APPEND",
+            autodetect=True)  # infer schema from DataFrame; creates table if it doesn't exist
+
+        df = pd.DataFrame({
+    "date":            date,
+    "city":            city.values,
+    "y_true":          y_true.values,
+    "y_pred":          y_pred,
+    "model_version":   predict_model_version
+})
+
+        self.bq_client.load_table_from_dataframe(df, full_table_name, job_config=job_config).result()
 
 
 
@@ -226,6 +338,10 @@ class CacheClient(ABC):
         """
         pass
 
+    @abstractmethod
+    def delete(self, cache_list: list):
+        pass
+
 
 class LocalCacheClient(CacheClient):
     """CacheClient backed by the local filesystem.
@@ -262,12 +378,16 @@ class LocalCacheClient(CacheClient):
             return False
 
     def list(self, prefix):
-        # prefix resolves to a directory e.g. cache_dir/Paris/weather/
+        # prefix = a directory: cache_dir/Paris/weather/
         # glob("*.json") lists files in that dir only (non-recursive)
         # relative_to(cache_dir) gives back the logical file_name passable to read()
         path = Path(self.cache_dir) / prefix
         file_list = [str(file.relative_to(self.cache_dir)) for file in path.glob("*.json")]
         return file_list
+
+
+    def delete(self, cache_list):
+        pass
 
 
 class GCSCacheClient(CacheClient):
@@ -286,16 +406,16 @@ class GCSCacheClient(CacheClient):
         self.client = storage.Client()
         self.bucket = self.client.bucket(bucket_name)
 
-    def read(self, blob_name):
-        blob = self.bucket.blob(blob_name)
-        return json.loads(blob.download_as_text()) #download
+    def read(self, file_name):
+        blob = self.bucket.blob(file_name)
+        return json.loads(blob.download_as_text())
 
-    def write(self, data, blob_name):
-        blob = self.bucket.blob(blob_name)
+    def write(self, data, file_name):
+        blob = self.bucket.blob(file_name)
         blob.upload_from_string(data=json.dumps(data), content_type="application/json")
 
-    def exists(self, blob_name):
-        blob = self.bucket.blob(blob_name)
+    def exists(self, file_name):
+        blob = self.bucket.blob(file_name)
         return blob.exists()
 
     def list(self, prefix):
@@ -304,6 +424,11 @@ class GCSCacheClient(CacheClient):
         blobs = self.client.list_blobs(BUCKET_NAME, prefix=prefix)
         blob_list = [blob.name for blob in blobs]
         return blob_list
+
+    def delete(self, cache_list):
+        blob_list = [self.bucket.blob(file) for file in cache_list]
+        self.bucket.delete_blobs(blob_list)
+        return len(blob_list)
 
 
 

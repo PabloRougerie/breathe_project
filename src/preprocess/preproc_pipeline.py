@@ -21,27 +21,36 @@ class PreprocessConfig:
     features: list = field(default_factory=lambda: SELECTED_FEATURES)  # mutable default: field() required to avoid shared state between instances
 
 
-def preprocessing_pipeline(airqual_df, weather_df, config: PreprocessConfig = PreprocessConfig()):
+def preprocessing_pipeline(airqual_df, weather_df, config: PreprocessConfig = PreprocessConfig(), mode: str = "train"):
     """Run the full preprocessing pipeline on raw airqual and weather DataFrames.
+
+    Args:
+        airqual_df (pd.DataFrame): Raw air quality DataFrame.
+        weather_df (pd.DataFrame): Raw weather DataFrame.
+        config (PreprocessConfig): Preprocessing hyperparameters.
+        mode (str): 'train' applies sensor filtering; 'eval' skips it (short windows
+                    spanning partial months would incorrectly flag all sensors).
 
     Returns:
         dataset_metadata (dict): date_start, date_end, n_rows, n_features, list_features
-        X (pd.DataFrame): feature matrix (config.features only)
-        y (pd.Series): target
+        data (pd.DataFrame): processed DataFrame (config.features + date + target)
     """
-
-    print(f"⚙️  Starting preprocessing airqual: {len(airqual_df)} rows, weather: {len(weather_df)} rows")
 
     #------------------
     # INITIAL CLEANING
     #------------------
 
     airqual_no_neg = clean_neg_values(airqual_df)
-    airqual_sensor_filtered = filter_sensors(df= airqual_no_neg,
-                                             max_gap= config.max_gap,
-                                             max_q= config.max_q,
-                                             min_bad_month_pct= config.min_bad_month_pct,
-                                             min_coverage_pct= config.min_coverage_pct)
+
+    if mode == "train":
+        airqual_sensor_filtered = filter_sensors(df= airqual_no_neg,
+                                                 max_gap= config.max_gap,
+                                                 max_q= config.max_q,
+                                                 min_bad_month_pct= config.min_bad_month_pct,
+                                                 min_coverage_pct= config.min_coverage_pct)
+    else:
+        airqual_sensor_filtered = airqual_no_neg
+
     airqual_col_selected = filter_columns(df= airqual_sensor_filtered,
                                           col_to_keep=["date", "city", "sensor_id", "pm25_avg"])
 
@@ -54,7 +63,6 @@ def preprocessing_pipeline(airqual_df, weather_df, config: PreprocessConfig = Pr
     #-------
 
     data = merge_source_df(df_airqual= airqual_ready, df_weather= weather_ready)
-    print(f"   rows after merge: {len(data)}")
     data = single_gaps_imputer(df= data, limit= config.limit)
 
     #------------------
@@ -62,23 +70,20 @@ def preprocessing_pipeline(airqual_df, weather_df, config: PreprocessConfig = Pr
     #------------------
 
     data = generate_target(data, horizon= config.horizon)
-    data = target_transform(data)
+    data = target_transform(data, columns=["pm25_avg", "target"])
 
     #------------------
     # FEATURE ENGINEERING
     #------------------
 
     data = feature_engineering(data, approach= config.approach)
-    print(f"   features generated ({config.approach}): {len(data.columns) - 2} features")
 
     #------------------
     # FINAL CLEANING
     #------------------
 
-    rows_before = len(data)
     data = drop_na(data)
     data = drop_preprocess_cols(data)
-    print(f"   rows dropped (dropna + preprocess cols): {rows_before - len(data)} → {len(data)} remaining")
 
     #extract metadata for logging
     dataset_metadata = {
@@ -89,7 +94,7 @@ def preprocessing_pipeline(airqual_df, weather_df, config: PreprocessConfig = Pr
         "list_features": [feat for feat in data.columns if feat not in ["date", "target"]]
     }
 
-    #split data
+    # split data
     data = data[config.features + ["date", "target"]]
 
     # metadata reflects the features actually passed to the model

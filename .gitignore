@@ -18,27 +18,28 @@ dist/
 
 # Jupyter
 .ipynb_checkpoints/
-notebooks/catboost_info/
 
 # Data (ne pas commit les données)
 data/
 *.csv
 *.parquet
 model/
-context.md
+
 
 # MLflow
 mlruns/
 mlartifacts/
+mlflow.db
 
 # OS
 .DS_Store
 
-# Credentials Google Cloud (AJOUTER!)
+# Credentials Google Cloud
 *.json
-!pyproject.toml
-!uv.lock
-credentials*.json
-*-credentials.json
 *.pem
 *.key
+*.env.yaml
+
+# Exceptions
+!pyproject.toml
+!uv.lock

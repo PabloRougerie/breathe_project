@@ -33,30 +33,20 @@ def run_training(X, y, dataset_metadata):
     with mlflow.start_run() as run:
 
         client = MlflowClient()
-        print(f"ℹ️ MLflow run started — run_id: {run.info.run_id}")
 
-        print("📦 Instantiating model...")
         model = initiate_model()
-
-        print(f"⚙️  Fitting on {len(X)} rows, {len(X.columns)} features...")
         trained_model, fit_time = train_model(model, X, y)
-        print(f"   fit time: {fit_time}s")
 
         # log hyperparams
         mlflow.log_params(BEST_PARAMS)
 
-        # creates dict with params relative to train
         train_artifact = {
             "fit_time": fit_time,
             **{k: v for k, v in dataset_metadata.items() if k not in ("date_start", "date_end")}
-
         }
-        #log as artifact in mlflow
         mlflow.log_dict(train_artifact, "train_metadata.json")
 
-        print("💾 Saving model to MLflow registry...")
         model_version = save_model(trained_model)
-        print(f"   model registered as version {model_version}")
 
         #log searchable/filtrable params for that run. (dates are important to know where we're at)
         mlflow.log_params({
@@ -66,10 +56,8 @@ def run_training(X, y, dataset_metadata):
         })
 
 
-        try:#if works, there's a champion already, registring a challenger
-            client.get_model_version_by_alias(name= MLFLOW_MODEL_NAME, alias= "champion")
-            print(f"champion already existing. registring model as challenger")
-
+        try:
+            client.get_model_version_by_alias(name=MLFLOW_MODEL_NAME, alias="champion")
             assigned_alias = "challenger"
             register_model(client, version=model_version, alias= assigned_alias)
             #set as tags in order to appear in the run view in MLflow UI
@@ -96,7 +84,7 @@ def run_training(X, y, dataset_metadata):
 
 
 
-        return trained_model, model_version
+        return trained_model, model_version, assigned_alias
 
 
 
@@ -119,23 +107,15 @@ def run_evaluating(X_val, y_true, dataset_metadata, model=None, model_version=No
     if eval_mode not in ("test_set", "fresh_batch"):
         raise ValueError(f"❌ eval_mode must be 'test_set' or 'fresh_batch', got '{eval_mode}'")
 
-
-
     with mlflow.start_run() as run:
-        print(f"ℹ️ MLflow run started — run_id: {run.info.run_id}")
 
         # Load from registry if no model passed (standalone eval, not chained after training)
         if model is None:
-            print(f"📦 Loading '{alias}' model from registry...")
             client = MlflowClient()
             model, model_version = load_model(client, alias=alias)
-            print(f"   loaded model v{model_version}")
 
-        print(f"⚙️ Evaluating on {len(X_val)} rows ({eval_mode})...")
         score = evaluate(model, X_val, y_true)
-        print(f"   RMSE: {round(score, 4)}")
 
-        # All filterable params in one call
         mlflow.log_params({
             "eval_date":     str(datetime.now().date()),
             "eval_mode":     eval_mode,
@@ -146,7 +126,6 @@ def run_evaluating(X_val, y_true, dataset_metadata, model=None, model_version=No
         })
         mlflow.log_metric("rmse", score)
 
-        #set tag to appear in run view in UI
         mlflow.set_tags({
             "run_type":    "evaluation",
             "model_alias": alias,
@@ -154,6 +133,16 @@ def run_evaluating(X_val, y_true, dataset_metadata, model=None, model_version=No
             "date_end":    dataset_metadata["date_end"],
         })
 
+        # Store score as reference on the model version for future drift detection
+        if eval_mode == "test_set":
+            client = MlflowClient()
+            client.set_model_version_tag(
+                name=MLFLOW_MODEL_NAME,
+                version=str(model_version),
+                key="reference_rmse",
+                value=str(score)
+            )
+
         print(f"✅ Evaluation done — RMSE: {round(score, 4)} | model v{model_version} | {eval_mode}")
 
-    return score
+    return score, model_version
