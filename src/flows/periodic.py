@@ -30,6 +30,8 @@ BATCH_SCHEDULE = {
     6: {"batch_start": "2026-01-08", "batch_end": "2026-02-18", "train_start": "2023-05-01", "train_end": "2026-01-07"},
 }
 
+# Extra raw days loaded before batch_start so lags/rolls are valid at batch start.
+PREPROCESS_LAG_WARMUP_DAYS = 14
 
 
 # =============================================================================
@@ -451,12 +453,16 @@ def periodic_monitoring_masterflow(batch_num= None):
 
     batch_start = BATCH_SCHEDULE[batch_num]["batch_start"]
     batch_end   = BATCH_SCHEDULE[batch_num]["batch_end"]
+    batch_preprocess_start = (
+        pd.Timestamp(batch_start).normalize()
+        - pd.Timedelta(days=PREPROCESS_LAG_WARMUP_DAYS)
+    ).strftime("%Y-%m-%d")
 
     # --- Ingest and preprocess the fresh batch ---
     logger.info("Ingestion")
     ingestion_subflow(batch_start, batch_end)
 
-    preprocess_subflow(batch_start, batch_end, mode="eval")
+    preprocess_subflow(batch_preprocess_start, batch_end, mode="eval")
 
     # --- Evaluate champion on fresh batch; champion loaded from registry ---
     logger.info(f"Evaluating champion on batch {batch_start} to {batch_end}")
