@@ -18,6 +18,11 @@ st.set_page_config(page_title= "PM2.5 level prediction: model performance monito
                    page_icon= "📈",
                 layout= "wide")
 
+with st.sidebar:
+    if st.button("Purger le cache BQ et recharger"):
+        st.cache_data.clear()
+        st.rerun()
+
 #================
 # LOAD DATA
 #================
@@ -140,8 +145,12 @@ with tab2:
               value= (df_preds["date"].min(),df_preds["date"].max()))
 
 
-    selected_data = df_preds[(df_preds["city"] == choice) & (df_preds["date"] >= date_choice[0]) & (df_preds["date"] <= date_choice[1])]
-    st.line_chart(data = selected_data, x= "date", y= ["y_true", "y_pred"])
+    selected_data = df_preds[
+        (df_preds["city"] == choice)
+        & (df_preds["date"] >= date_choice[0])
+        & (df_preds["date"] <= date_choice[1])
+    ].sort_values("date")
+    st.line_chart(data=selected_data, x="date", y=["y_true", "y_pred"])
 
 
 
