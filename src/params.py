@@ -38,8 +38,8 @@ GAR_REPO              = os.environ.get("GAR_REPO", "breathe-gar-repo")
 # MLFLOW
 # =============================================================================
 
-MLFLOW_MODEL_NAME      = "breathe-mlflow-model"
-MLFLOW_EXPERIMENT_NAME = "breathe-mlflow-experiment"
+MLFLOW_MODEL_NAME      = os.environ.get("MLFLOW_MODEL_NAME", "breathe-mlflow-model")
+MLFLOW_EXPERIMENT_NAME = os.environ.get("MLFLOW_EXPERIMENT_NAME", "breathe-mlflow-experiment")
 
 
 # =============================================================================
