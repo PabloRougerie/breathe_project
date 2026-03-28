@@ -5,19 +5,43 @@ from pathlib import Path
 # Streamlit executes this script from `ui/`, so Python typically prepends `ui/` to sys.path.
 # The `src` package lives next to `ui/` at the repo root, not inside `ui/`, so `import src`
 # would fail (e.g. on Streamlit Community Cloud) unless the repo root is also on sys.path.
-# This avoids needing `pip install -e .` or PYTHONPATH for that environment.
-_REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
+_REPO_ROOT = Path(__file__).resolve().parents[1]  # parent of `ui/` == repository root directory
+if str(_REPO_ROOT) not in sys.path:  # skip if already present to avoid duplicate entries on reload
+    sys.path.insert(0, str(_REPO_ROOT))  # prepend root so `import src` resolves to `src/` next to `ui/`
+
+import os  # needed before mirroring secrets: we assign os.environ before importing src.params
+
+import streamlit as st  # must be imported before st.secrets (loads .streamlit/secrets.toml + Cloud Secrets)
+
+
+def _streamlit_secrets_into_os_environ() -> None:
+    try:
+        _sec = st.secrets  # Streamlit merges local TOML and hosted Secrets into this mapping
+    except FileNotFoundError:
+        return  # no secrets file on disk: rely on `.env` + ADC for local BigQuery
+    _keys_for_params = (  # names aligned with src/params.py os.environ lookups
+        "GCP_PROJECT",
+        "BQ_DATASET_MONITORING",
+        "BQ_DATASET_RAW",
+        "BQ_DATASET_PROCESSED",
+        "GCP_REGION",
+        "BQ_REGION",
+        "BUCKET_NAME",
+    )
+    for _k in _keys_for_params:  # copy only declared keys so we do not dump nested tables into env
+        if _k in _sec:  # optional keys can stay unset and use params defaults
+            os.environ[_k] = str(_sec[_k])  # params reads os.environ when the module is imported below
+
+
+_streamlit_secrets_into_os_environ()  # run before `from src.params` so GCP_PROJECT etc. are defined
 
 import numpy as np
-import streamlit as st
 import pandas as pd
 import json
 from datetime import datetime
 from google.cloud import bigquery
+from google.oauth2 import service_account  # turns [gcp_credentials] dict into Credentials for BigQuery
 from google.api_core.exceptions import NotFound
-import os
 from src.params import *
 
 
@@ -38,9 +62,25 @@ with st.sidebar:
 # LOAD DATA
 #================
 
+
+@st.cache_resource
+def _bq_client():
+    try:
+        _sec = st.secrets  # same credential source as local file / Streamlit Cloud Settings
+        if "gcp_credentials" in _sec:  # TOML table present → use service-account JWT auth
+            _info = dict(_sec["gcp_credentials"])  # Streamlit Secret → plain dict for google-auth
+            _creds = service_account.Credentials.from_service_account_info(_info)  # build SA credentials from key fields
+            return bigquery.Client(credentials=_creds, project=GCP_PROJECT)  # authenticated client (Cloud / explicit SA)
+    except FileNotFoundError:
+        pass  # no secrets file: fall through to Application Default Credentials path below
+    except (KeyError, TypeError, ValueError):
+        pass  # malformed [gcp_credentials]: fall back to ADC instead of crashing import
+    return bigquery.Client(project=GCP_PROJECT)  # local dev: gcloud ADC or GOOGLE_APPLICATION_CREDENTIALS
+
+
 @st.cache_data
 def load_data_from_bq(table_name):
-    client = bigquery.Client()
+    client = _bq_client()  # SA from secrets on Cloud; ADC locally when gcp_credentials is absent
     full_table_name = f"{GCP_PROJECT}.{BQ_DATASET_MONITORING}.{table_name}"
 
     #get batch data

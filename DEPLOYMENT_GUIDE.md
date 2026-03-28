@@ -177,22 +177,6 @@ PYTHONPATH=. streamlit run ui/streamlit.py
 
 Build a small image that installs the project **with** `ui` extras, sets `WORKDIR`, runs `streamlit run ui/streamlit.py --server.port=8080 --server.address=0.0.0.0` — or reuse the package Dockerfile with overridden `CMD`. Deploy as a **service** (not a job) with the same env vars as needed for BigQuery.
 
-### 4.3 Streamlit Community Cloud (sans mlflow)
-
-Community Cloud cherche les dépendances **d’abord dans le dossier du fichier d’entrée**, puis à la racine. Avec le main module **`ui/streamlit.py`**, le fichier **`ui/requirements.txt`** est donc pris **avant** le `pyproject.toml` racine : seules les libs UI sont installées (pas mlflow → pas de pyarrow imposé par mlflow).
-
-**Secrets (Settings → Secrets)** — TOML :
-
-- `GCP_PROJECT` (et optionnellement `BQ_DATASET_MONITORING`, etc., comme dans `src/params`).
-- Table **`[gcp_credentials]`** : champs du JSON d’un **compte de service** dédié à la lecture du dashboard (voir IAM ci-dessous). L’app utilise ce bloc pour construire `bigquery.Client(...)` ; en local, sans secrets, elle utilise les **Application Default Credentials** (`gcloud auth application-default login`).
-
-**Où interviennent les droits :**
-
-1. **Côté Google Cloud (IAM)** : les permissions sont attachées au **compte de service** dont tu colles la clé dans les secrets (ou à ton utilisateur en local via ADC). Il faut au minimum pouvoir **lire** les tables du dataset monitoring (ex. rôles *BigQuery Data Viewer* sur le dataset, et *BigQuery Job User* au niveau projet ou dataset pour exécuter `query().result()`).
-2. **Côté Streamlit Cloud** : la plateforme n’a **aucun** accès GCP par défaut ; sans `[gcp_credentials]`, `bigquery.Client()` n’a pas d’identité valide et les appels BQ échouent.
-
-Dans **Advanced settings**, fixe une version Python avec des **wheels** stables (ex. **3.11** ou **3.12**) pour éviter des builds source inutiles.
-
 ---
 
 ## 5. Scheduler (cron)

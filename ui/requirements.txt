@@ -1,5 +1,4 @@
-# Dépendances minimales pour ui/streamlit.py (Streamlit Cloud lit ce fichier en priorité
-# quand le main module est dans ui/ — avant le pyproject.toml à la racine).
+# min dependencies for streamlit.py
 streamlit>=1.30
 numpy>=1.26
 pandas>=2.0,<3.0
