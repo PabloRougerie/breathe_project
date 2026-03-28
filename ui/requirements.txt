@@ -1,0 +1,9 @@
+# Dépendances minimales pour ui/streamlit.py (Streamlit Cloud lit ce fichier en priorité
+# quand le main module est dans ui/ — avant le pyproject.toml à la racine).
+streamlit>=1.30
+numpy>=1.26
+pandas>=2.0,<3.0
+google-cloud-bigquery>=3.40.0
+google-api-core>=2.0.0
+python-dotenv>=1.0.0
+db-dtypes>=1.5.0
