@@ -1,4 +1,5 @@
 # imports
+import numpy as np
 import streamlit as st
 import pandas as pd
 import json
@@ -151,6 +152,13 @@ with tab2:
         & (df_preds["date"] <= date_choice[1])
     ].sort_values("date")
     st.line_chart(data=selected_data, x="date", y=["y_true", "y_pred"])
+
+    rmsle_val = float(
+        np.sqrt(
+            np.mean((np.log1p(selected_data["y_true"]) - np.log1p(selected_data["y_pred"])) ** 2)
+        )
+    )
+    st.metric("RMSLE", f"{rmsle_val:.4f}")
 
 
 
