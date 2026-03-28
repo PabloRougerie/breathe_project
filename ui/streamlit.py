@@ -1,10 +1,20 @@
 # imports
+import sys
+from pathlib import Path
+
+# Streamlit executes this script from `ui/`, so Python typically prepends `ui/` to sys.path.
+# The `src` package lives next to `ui/` at the repo root, not inside `ui/`, so `import src`
+# would fail (e.g. on Streamlit Community Cloud) unless the repo root is also on sys.path.
+# This avoids needing `pip install -e .` or PYTHONPATH for that environment.
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 import numpy as np
 import streamlit as st
 import pandas as pd
 import json
 from datetime import datetime
-from pathlib import Path
 from google.cloud import bigquery
 from google.api_core.exceptions import NotFound
 import os
