@@ -53,11 +53,6 @@ st.set_page_config(page_title= "PM2.5 level prediction: model performance monito
                    page_icon= "📈",
                 layout= "wide")
 
-with st.sidebar:
-    if st.button("Purger le cache BQ et recharger"):
-        st.cache_data.clear()
-        st.rerun()
-
 #================
 # LOAD DATA
 #================
@@ -176,13 +171,13 @@ with tab1:
                         pct = 100 * (1 - float(challenger_rmse) / float(champion_rmse))
                         pct_delta = f"{pct:+.1f}% vs prod"
                     st.metric(
-                        "New model RMSE",
+                        "Challenger model RMSE",
                         f"{challenger_rmse:.3f}",
                         delta=pct_delta,
                         delta_color="normal",
                     )
                 else:
-                    st.metric("New model RMSE", "—")
+                    st.metric("Challenger model RMSE", "—")
 
 
 with tab2:
