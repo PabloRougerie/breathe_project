@@ -11,7 +11,9 @@ from sklearn.metrics import root_mean_squared_log_error, root_mean_squared_error
 def baseline_calculation(X, y, baseline):
     X = X.sort_values(by="date", ascending=True)
     if baseline not in ["persistence", "extrapolation", "average"]:
-        raise ValueError(f"❌ baseline method must be either 'persistence', 'extrapolation', 'average'. {baseline} was passed instead")
+        raise ValueError(
+            f"❌ baseline method must be either 'persistence', 'extrapolation', 'average'. {baseline} was passed instead"
+        )
 
     # target and lags are already log1p-transformed → RMSE in log space
     if baseline == "persistence":
@@ -26,8 +28,8 @@ def baseline_calculation(X, y, baseline):
     score = root_mean_squared_error(y, y_pred)
     return score
 
-def baseline_crossval(X,y,tscv):
 
+def baseline_crossval(X, y, tscv):
     persistence_scores = []
     extrapolation_scores = []
     average_scores = []
@@ -38,9 +40,14 @@ def baseline_crossval(X,y,tscv):
         extrapolation_scores.append(baseline_calculation(X_val, y_val, "extrapolation"))
         average_scores.append(baseline_calculation(X_val, y_val, "average"))
 
-    results = pd.DataFrame.from_dict({"persistence_baseline": np.mean(persistence_scores),
-                            "Extrapolation_baseline": np.mean(extrapolation_scores),
-                            "Average_baseline": np.mean(average_scores) }, orient= "index")
+    results = pd.DataFrame.from_dict(
+        {
+            "persistence_baseline": np.mean(persistence_scores),
+            "Extrapolation_baseline": np.mean(extrapolation_scores),
+            "Average_baseline": np.mean(average_scores),
+        },
+        orient="index",
+    )
     print("✅ Baseline calculated and averaged over all folds")
 
     return results

@@ -5,9 +5,15 @@ from pathlib import Path
 # Streamlit executes this script from `ui/`, so Python typically prepends `ui/` to sys.path.
 # The `src` package lives next to `ui/` at the repo root, not inside `ui/`, so `import src`
 # would fail (e.g. on Streamlit Community Cloud) unless the repo root is also on sys.path.
-_REPO_ROOT = Path(__file__).resolve().parents[1]  # parent of `ui/` == repository root directory
-if str(_REPO_ROOT) not in sys.path:  # skip if already present to avoid duplicate entries on reload
-    sys.path.insert(0, str(_REPO_ROOT))  # prepend root so `import src` resolves to `src/` next to `ui/`
+_REPO_ROOT = (
+    Path(__file__).resolve().parents[1]
+)  # parent of `ui/` == repository root directory
+if (
+    str(_REPO_ROOT) not in sys.path
+):  # skip if already present to avoid duplicate entries on reload
+    sys.path.insert(
+        0, str(_REPO_ROOT)
+    )  # prepend root so `import src` resolves to `src/` next to `ui/`
 
 import os  # needed before mirroring secrets: we assign os.environ before importing src.params
 
@@ -16,7 +22,9 @@ import streamlit as st  # must be imported before st.secrets (loads .streamlit/s
 
 def _streamlit_secrets_into_os_environ() -> None:
     try:
-        _sec = st.secrets  # Streamlit merges local TOML and hosted Secrets into this mapping
+        _sec = (
+            st.secrets
+        )  # Streamlit merges local TOML and hosted Secrets into this mapping
     except FileNotFoundError:
         return  # no secrets file on disk: rely on `.env` + ADC for local BigQuery
     _keys_for_params = (  # names aligned with src/params.py os.environ lookups
@@ -28,9 +36,13 @@ def _streamlit_secrets_into_os_environ() -> None:
         "BQ_REGION",
         "BUCKET_NAME",
     )
-    for _k in _keys_for_params:  # copy only declared keys so we do not dump nested tables into env
+    for _k in (
+        _keys_for_params
+    ):  # copy only declared keys so we do not dump nested tables into env
         if _k in _sec:  # optional keys can stay unset and use params defaults
-            os.environ[_k] = str(_sec[_k])  # params reads os.environ when the module is imported below
+            os.environ[_k] = str(
+                _sec[_k]
+            )  # params reads os.environ when the module is imported below
 
 
 _streamlit_secrets_into_os_environ()  # run before `from src.params` so GCP_PROJECT etc. are defined
@@ -40,45 +52,62 @@ import pandas as pd
 import json
 from datetime import datetime
 from google.cloud import bigquery
-from google.oauth2 import service_account  # turns [gcp_credentials] dict into Credentials for BigQuery
+from google.oauth2 import (
+    service_account,
+)  # turns [gcp_credentials] dict into Credentials for BigQuery
 from google.api_core.exceptions import NotFound
 from src.params import *
-
 
 
 # ===============
 # PAGE CONFIG
 # ================
-st.set_page_config(page_title= "PM2.5 level prediction: model performance monitoring",
-                   page_icon= "📈",
-                layout= "wide")
+st.set_page_config(
+    page_title="PM2.5 level prediction: model performance monitoring",
+    page_icon="📈",
+    layout="wide",
+)
 
-#================
+# ================
 # LOAD DATA
-#================
+# ================
 
 
 @st.cache_resource
 def _bq_client():
     try:
-        _sec = st.secrets  # same credential source as local file / Streamlit Cloud Settings
-        if "gcp_credentials" in _sec:  # TOML table present → use service-account JWT auth
-            _info = dict(_sec["gcp_credentials"])  # Streamlit Secret → plain dict for google-auth
-            _creds = service_account.Credentials.from_service_account_info(_info)  # build SA credentials from key fields
-            return bigquery.Client(credentials=_creds, project=GCP_PROJECT)  # authenticated client (Cloud / explicit SA)
+        _sec = (
+            st.secrets
+        )  # same credential source as local file / Streamlit Cloud Settings
+        if (
+            "gcp_credentials" in _sec
+        ):  # TOML table present → use service-account JWT auth
+            _info = dict(
+                _sec["gcp_credentials"]
+            )  # Streamlit Secret → plain dict for google-auth
+            _creds = service_account.Credentials.from_service_account_info(
+                _info
+            )  # build SA credentials from key fields
+            return bigquery.Client(
+                credentials=_creds, project=GCP_PROJECT
+            )  # authenticated client (Cloud / explicit SA)
     except FileNotFoundError:
         pass  # no secrets file: fall through to Application Default Credentials path below
     except (KeyError, TypeError, ValueError):
         pass  # malformed [gcp_credentials]: fall back to ADC instead of crashing import
-    return bigquery.Client(project=GCP_PROJECT)  # local dev: gcloud ADC or GOOGLE_APPLICATION_CREDENTIALS
+    return bigquery.Client(
+        project=GCP_PROJECT
+    )  # local dev: gcloud ADC or GOOGLE_APPLICATION_CREDENTIALS
 
 
 @st.cache_data
 def load_data_from_bq(table_name):
-    client = _bq_client()  # SA from secrets on Cloud; ADC locally when gcp_credentials is absent
+    client = (
+        _bq_client()
+    )  # SA from secrets on Cloud; ADC locally when gcp_credentials is absent
     full_table_name = f"{GCP_PROJECT}.{BQ_DATASET_MONITORING}.{table_name}"
 
-    #get batch data
+    # get batch data
     query = f"""
             SELECT *
             FROM `{full_table_name}`
@@ -87,10 +116,12 @@ def load_data_from_bq(table_name):
 
     df = client.query(query).result().to_dataframe()
     return df
-    #df_batch["batch_start"] = pd.to_datetime(df_batch["batch_start"])
-    #df_batch["batch_end"] = pd.to_datetime(df_batch["batch_end"])
-    #get prediction data
-    #NOTE: in full scale project we'd filter on request, but here we can getthe whole table and filter later
+    # df_batch["batch_start"] = pd.to_datetime(df_batch["batch_start"])
+    # df_batch["batch_end"] = pd.to_datetime(df_batch["batch_end"])
+    # get prediction data
+    # NOTE: in full scale project we'd filter on request, but here we can getthe whole table and filter later
+
+
 #     query_pred = f"""
 #             SELECT *
 #             FROM `{table_name_prediction}`
@@ -101,8 +132,6 @@ def load_data_from_bq(table_name):
 #     return df_batch, df_pred
 
 
-
-
 tab1, tab2 = st.tabs(["Drift Monitoring", "PM2.5 prediction"])
 
 with tab1:
@@ -111,9 +140,9 @@ with tab1:
     df_batch["batch_end"] = pd.to_datetime(df_batch["batch_end"])
     df_batch = df_batch.sort_values(by=["batch_start"], ascending=False)
     df_batch["drift_detected"] = df_batch["drift_detected"].fillna(False).astype(bool)
-    df_batch["promotion_applied"] = df_batch["promotion_applied"].fillna(False).astype(bool)
-
-
+    df_batch["promotion_applied"] = (
+        df_batch["promotion_applied"].fillna(False).astype(bool)
+    )
 
     for _, batch in df_batch.iterrows():
         drift = bool(batch.get("drift_detected", False))
@@ -135,7 +164,9 @@ with tab1:
 
             with c3:
                 if pd.notna(champion_rmse):
-                    champ_delta = f"v{champion_version}" if pd.notna(champion_version) else None
+                    champ_delta = (
+                        f"v{champion_version}" if pd.notna(champion_version) else None
+                    )
                     st.metric(
                         "Current model RMSE",
                         f"{champion_rmse:.3f}",
@@ -186,10 +217,12 @@ with tab2:
     cities = df_preds["city"].unique().tolist()
     choice = st.selectbox("Choose a city:", cities)
 
-    date_choice= st.slider("date range", min_value= df_preds["date"].min(),
-              max_value= df_preds["date"].max(),
-              value= (df_preds["date"].min(),df_preds["date"].max()))
-
+    date_choice = st.slider(
+        "date range",
+        min_value=df_preds["date"].min(),
+        max_value=df_preds["date"].max(),
+        value=(df_preds["date"].min(), df_preds["date"].max()),
+    )
 
     selected_data = df_preds[
         (df_preds["city"] == choice)
@@ -200,25 +233,13 @@ with tab2:
 
     rmsle_val = float(
         np.sqrt(
-            np.mean((np.log1p(selected_data["y_true"]) - np.log1p(selected_data["y_pred"])) ** 2)
+            np.mean(
+                (np.log1p(selected_data["y_true"]) - np.log1p(selected_data["y_pred"]))
+                ** 2
+            )
         )
     )
     st.metric("RMSLE", f"{rmsle_val:.4f}")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 #     # Try multiple possible paths for different deployment scenarios
@@ -271,8 +292,6 @@ with tab2:
 # st.sidebar.subheader("Additional information", divider= "red")
 # true_pos = st.sidebar.toggle("Show true position?")
 # error = st.sidebar.toggle("Show prediction error?")
-
-
 
 
 # #================
@@ -334,7 +353,6 @@ with tab2:
 #                 fill = True,
 #                 fill_opacity = 0.2
 #             ).add_to(map)
-
 
 
 #     if lgbm_on:

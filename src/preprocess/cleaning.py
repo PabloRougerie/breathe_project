@@ -1,5 +1,6 @@
 import pandas as pd
 
+
 def get_bad_sensors_gap(df, max_gap, max_q):
     """
     Flag sensors with excessive gaps in their time series.
@@ -28,7 +29,9 @@ def get_bad_sensors_gap(df, max_gap, max_q):
         .index.get_level_values("sensor_id")
         .tolist()
     )
-    print(f"  [gap filter] {len(bad)} sensor(s) flagged — max_gap={max_gap}d, max_q75={max_q}d")
+    print(
+        f"  [gap filter] {len(bad)} sensor(s) flagged — max_gap={max_gap}d, max_q75={max_q}d"
+    )
     return bad
 
 
@@ -55,8 +58,12 @@ def get_bad_sensors_coverage(df, min_coverage_pct, min_bad_month_pct):
         .reset_index(name="nb_readings")
     )
     coverage_monthly["days_in_month"] = coverage_monthly["date"].dt.days_in_month
-    coverage_monthly["coverage_pct"] = coverage_monthly["nb_readings"] / coverage_monthly["days_in_month"] * 100
-    coverage_monthly["bad_month"] = (coverage_monthly["coverage_pct"] < min_coverage_pct).astype(int)
+    coverage_monthly["coverage_pct"] = (
+        coverage_monthly["nb_readings"] / coverage_monthly["days_in_month"] * 100
+    )
+    coverage_monthly["bad_month"] = (
+        coverage_monthly["coverage_pct"] < min_coverage_pct
+    ).astype(int)
 
     bad_month_ratio = (
         coverage_monthly.groupby(["city", "sensor_id"])["bad_month"]
@@ -65,10 +72,15 @@ def get_bad_sensors_coverage(df, min_coverage_pct, min_bad_month_pct):
     )
 
     bad = set(
-        bad_month_ratio[bad_month_ratio["bad_month_pct"] > min_bad_month_pct]["sensor_id"].tolist()
+        bad_month_ratio[bad_month_ratio["bad_month_pct"] > min_bad_month_pct][
+            "sensor_id"
+        ].tolist()
     )
-    print(f"  [coverage filter] {len(bad)} sensor(s) flagged — min_cov={min_coverage_pct}%, max_bad_months={min_bad_month_pct:.0%}")
+    print(
+        f"  [coverage filter] {len(bad)} sensor(s) flagged — min_cov={min_coverage_pct}%, max_bad_months={min_bad_month_pct:.0%}"
+    )
     return bad
+
 
 def filter_sensors(df, max_gap, max_q, min_coverage_pct, min_bad_month_pct):
     """
@@ -87,12 +99,16 @@ def filter_sensors(df, max_gap, max_q, min_coverage_pct, min_bad_month_pct):
     Returns:
         pd.DataFrame: Filtered DataFrame with bad sensors removed.
     """
-    bad = get_bad_sensors_gap(df, max_gap, max_q) | get_bad_sensors_coverage(df, min_coverage_pct, min_bad_month_pct)
+    bad = get_bad_sensors_gap(df, max_gap, max_q) | get_bad_sensors_coverage(
+        df, min_coverage_pct, min_bad_month_pct
+    )
 
     df_filtered = df[~df["sensor_id"].isin(bad)].copy()
 
     n_removed = df["sensor_id"].nunique() - df_filtered["sensor_id"].nunique()
-    print(f"✅ filter_sensors: {n_removed} sensor(s) removed, {df_filtered['sensor_id'].nunique()} remaining")
+    print(
+        f"✅ filter_sensors: {n_removed} sensor(s) removed, {df_filtered['sensor_id'].nunique()} remaining"
+    )
     return df_filtered
 
 
@@ -112,7 +128,9 @@ def clean_neg_values(df, col_to_clean="pm25_avg"):
 
     total_values = len(df)
     neg_values_before = (df[col_to_clean] <= 0).sum()
-    print(f"⚠️  {neg_values_before} aberrant (negative or zero) values found ({neg_values_before / total_values * 100:.2f}%)")
+    print(
+        f"⚠️  {neg_values_before} aberrant (negative or zero) values found ({neg_values_before / total_values * 100:.2f}%)"
+    )
 
     df_clean = df[df[col_to_clean] > 0].copy()
 
@@ -121,11 +139,12 @@ def clean_neg_values(df, col_to_clean="pm25_avg"):
         print(f"✅ All negative values removed — {len(df_clean)} rows remaining")
         return df_clean
     else:
-        raise Exception(f"❌ Not all negative values removed. {neg_values_after} remaining")
+        raise Exception(
+            f"❌ Not all negative values removed. {neg_values_after} remaining"
+        )
 
 
-
-def average_sensors(df, col_to_average= "pm25_avg"):
+def average_sensors(df, col_to_average="pm25_avg"):
     """
     Average PM2.5 values across sensors for each city/date.
 
@@ -139,31 +158,27 @@ def average_sensors(df, col_to_average= "pm25_avg"):
         pd.DataFrame: One row per (city, date) with averaged pm25 columns.
     """
 
-
-    df_avg = (
-        df.groupby(["city", "date"])[col_to_average]
-        .mean()
-        .reset_index()
-    )
+    df_avg = df.groupby(["city", "date"])[col_to_average].mean().reset_index()
 
     print(f"✅ Sensors averaged — {df_avg.shape[0]} rows (city × date)")
     return df_avg
 
 
-def single_gaps_imputer(df, limit= 1):
-    """ interpolate one day gap"""
+def single_gaps_imputer(df, limit=1):
+    """interpolate one day gap"""
 
     missing = {"city", "date", "pm25_avg"} - set(df.columns)
     if missing:
         raise KeyError(f"column(s) {missing} missing from dataframe")
 
-    df = df.sort_values(by= ["city", "date"])
+    df = df.sort_values(by=["city", "date"])
     before = df["pm25_avg"].isna().sum()
-    print(f"total nan before: {df["pm25_avg"].isna().sum()}")
-    df["pm25_avg"] = df.groupby("city")["pm25_avg"].transform(lambda x: x.interpolate(method= "linear",
-                                                                                      axis= 0,
-                                                                                      limit= limit,                                                                                    limit_area= "inside"
-                                                                ))
+    print(f"total nan before: {df['pm25_avg'].isna().sum()}")
+    df["pm25_avg"] = df.groupby("city")["pm25_avg"].transform(
+        lambda x: x.interpolate(
+            method="linear", axis=0, limit=limit, limit_area="inside"
+        )
+    )
     after = df["pm25_avg"].isna().sum()
     print(f"✅ Imputing successful.{limit}-day gaps before: {before}. After: {after}")
     return df
@@ -176,6 +191,7 @@ def drop_na(df):
     after = len(df)
     print(f"✅ dropna: {before - after} rows removed, {after} remaining")
     return df
+
 
 def drop_preprocess_cols(df, cols_to_drop=["pm25_avg"]):
     """Drop columns used during preprocessing but not needed for modeling."""

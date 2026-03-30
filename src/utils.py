@@ -32,7 +32,9 @@ class StorageClient(ABC):
         pass
 
     @abstractmethod
-    def save_data(self, data: pd.DataFrame, data_type: str, start_date: str, end_date: str):
+    def save_data(
+        self, data: pd.DataFrame, data_type: str, start_date: str, end_date: str
+    ):
         """Persist a DataFrame for the given data type and date range."""
         pass
 
@@ -71,16 +73,24 @@ class LocalStorageClient(StorageClient):
             pd.DataFrame
         """
         if data_type not in ["weather", "airqual", "processed"]:
-            raise ValueError(f"data_type must be 'weather', 'airqual', or 'processed', got '{data_type}'")
+            raise ValueError(
+                f"data_type must be 'weather', 'airqual', or 'processed', got '{data_type}'"
+            )
 
         subfolder = "raw" if data_type in ["weather", "airqual"] else "processed"
-        path = Path(self.base_storage_dir) / subfolder / f"{data_type}_{start_date}_{end_date}.csv"
+        path = (
+            Path(self.base_storage_dir)
+            / subfolder
+            / f"{data_type}_{start_date}_{end_date}.csv"
+        )
 
         if not path.exists():
             raise FileNotFoundError(f"❌ File not found: {path}")
 
         df = pd.read_csv(path)
-        df["date"] = pd.to_datetime(df["date"])  # csv stores dates as strings, reparse to datetime
+        df["date"] = pd.to_datetime(
+            df["date"]
+        )  # csv stores dates as strings, reparse to datetime
 
         print(f"✅ Loaded {len(df)} rows from {path}")
         return df
@@ -95,10 +105,16 @@ class LocalStorageClient(StorageClient):
             end_date (str): End date (YYYY-MM-DD) — included in filename
         """
         if data_type not in ["weather", "airqual", "processed"]:
-            raise ValueError(f"data_type must be 'weather', 'airqual', or 'processed', got '{data_type}'")
+            raise ValueError(
+                f"data_type must be 'weather', 'airqual', or 'processed', got '{data_type}'"
+            )
 
         subfolder = "raw" if data_type in ["weather", "airqual"] else "processed"
-        path = Path(self.base_storage_dir) / subfolder / f"{data_type}_{start_date}_{end_date}.csv"
+        path = (
+            Path(self.base_storage_dir)
+            / subfolder
+            / f"{data_type}_{start_date}_{end_date}.csv"
+        )
         path.parent.mkdir(parents=True, exist_ok=True)
         data.to_csv(path, index=False)
         print(f"✅ Saved {len(data)} rows to {path}")
@@ -134,9 +150,15 @@ class GCSStorageClient(StorageClient):
             pd.DataFrame
         """
         if data_type not in ["weather", "airqual", "processed"]:
-            raise ValueError(f"data_type must be 'weather', 'airqual', or 'processed', got '{data_type}'")
+            raise ValueError(
+                f"data_type must be 'weather', 'airqual', or 'processed', got '{data_type}'"
+            )
 
-        dataset = BQ_DATASET_RAW if data_type in ["weather", "airqual"] else BQ_DATASET_PROCESSED
+        dataset = (
+            BQ_DATASET_RAW
+            if data_type in ["weather", "airqual"]
+            else BQ_DATASET_PROCESSED
+        )
         full_table_name = f"{GCP_PROJECT}.{dataset}.{data_type}"
 
         query = f"""
@@ -165,9 +187,15 @@ class GCSStorageClient(StorageClient):
             end_date (str): End date (YYYY-MM-DD) — used in DELETE filter
         """
         if data_type not in ["weather", "airqual", "processed"]:
-            raise ValueError(f"data_type must be 'weather', 'airqual', or 'processed', got '{data_type}'")
+            raise ValueError(
+                f"data_type must be 'weather', 'airqual', or 'processed', got '{data_type}'"
+            )
 
-        dataset = BQ_DATASET_RAW if data_type in ["weather", "airqual"] else BQ_DATASET_PROCESSED
+        dataset = (
+            BQ_DATASET_RAW
+            if data_type in ["weather", "airqual"]
+            else BQ_DATASET_PROCESSED
+        )
         full_table_name = f"{GCP_PROJECT}.{dataset}.{data_type}"
 
         # Delete rows in the date range before inserting to avoid duplicates on re-run
@@ -179,23 +207,28 @@ class GCSStorageClient(StorageClient):
             delete_job.result()  # wait for completion; dml_stats lives on the job, not the result
             deleted = delete_job.dml_stats.deleted_row_count
             if deleted > 0:
-                print(f"Deleted {deleted} rows from {full_table_name} ({start_date} → {end_date})")
+                print(
+                    f"Deleted {deleted} rows from {full_table_name} ({start_date} → {end_date})"
+                )
         except NotFound:
             pass  # table doesn't exist yet on first run: skip delete
         except Exception as e:
-            raise RuntimeError(f"DELETE failed for {full_table_name} ({start_date} → {end_date}): {e}") from e
+            raise RuntimeError(
+                f"DELETE failed for {full_table_name} ({start_date} → {end_date}): {e}"
+            ) from e
 
         job_config = bigquery.LoadJobConfig(
             write_disposition="WRITE_APPEND",
-            autodetect=True  # infer schema from DataFrame; creates table if it doesn't exist
+            autodetect=True,  # infer schema from DataFrame; creates table if it doesn't exist
         )
-        self.bq_client.load_table_from_dataframe(data, full_table_name, job_config=job_config).result()
+        self.bq_client.load_table_from_dataframe(
+            data, full_table_name, job_config=job_config
+        ).result()
 
         return full_table_name
 
 
-class MonitoringClient():
-
+class MonitoringClient:
     def __init__(self):
         self.bq_client = bigquery.Client(project=GCP_PROJECT)
 
@@ -216,20 +249,20 @@ class MonitoringClient():
         except Exception as e:
             raise RuntimeError(f"DELETE failed for {full_table_name}: {e}") from e
 
-        #define job config to add data
+        # define job config to add data
         job_config = bigquery.LoadJobConfig(
-            write_disposition="WRITE_APPEND",
-            autodetect=True)  # infer schema from DataFrame; creates table if it doesn't exist
+            write_disposition="WRITE_APPEND", autodetect=True
+        )  # infer schema from DataFrame; creates table if it doesn't exist
 
-        df = pd.DataFrame([batch_data]) #list of dict
-        self.bq_client.load_table_from_dataframe(df, full_table_name, job_config=job_config).result()
+        df = pd.DataFrame([batch_data])  # list of dict
+        self.bq_client.load_table_from_dataframe(
+            df, full_table_name, job_config=job_config
+        ).result()
 
     def upsert_model(self, model_data: dict):
-
-
         full_table_name = f"{GCP_PROJECT}.{BQ_DATASET_MONITORING}.models"
 
-            #delete row of model version v
+        # delete row of model version v
         # Delete rows in the date range before inserting to avoid duplicates on re-run
         try:
             delete_job = self.bq_client.query(f"""
@@ -239,23 +272,28 @@ class MonitoringClient():
             delete_job.result()  # wait for completion; dml_stats lives on the job, not the result
             deleted = delete_job.dml_stats.deleted_row_count
             if deleted == 1:
-                print(f"Deleted model version {model_data['model_version']} from {full_table_name}")
+                print(
+                    f"Deleted model version {model_data['model_version']} from {full_table_name}"
+                )
             if deleted > 1:
-                print(f"⚠️ More than 1 occurences of model v{model_data['model_version']} deleted from {full_table_name}")
+                print(
+                    f"⚠️ More than 1 occurences of model v{model_data['model_version']} deleted from {full_table_name}"
+                )
 
         except NotFound:
             pass  # table doesn't exist yet on first run: skip delete
         except Exception as e:
             raise RuntimeError(f"DELETE failed for {full_table_name}: {e}") from e
 
-             #define job config to add data
+            # define job config to add data
         job_config = bigquery.LoadJobConfig(
-            write_disposition="WRITE_APPEND",
-            autodetect=True)  # infer schema from DataFrame; creates table if it doesn't exist
+            write_disposition="WRITE_APPEND", autodetect=True
+        )  # infer schema from DataFrame; creates table if it doesn't exist
 
-        df = pd.DataFrame([model_data]) #list of dict
-        self.bq_client.load_table_from_dataframe(df, full_table_name, job_config=job_config).result()
-
+        df = pd.DataFrame([model_data])  # list of dict
+        self.bq_client.load_table_from_dataframe(
+            df, full_table_name, job_config=job_config
+        ).result()
 
     def update_model_alias(self, model_version, new_alias):
         full_table_name = f"{GCP_PROJECT}.{BQ_DATASET_MONITORING}.models"
@@ -266,12 +304,10 @@ class MonitoringClient():
             WHERE model_version = '{model_version}'
         """).result()
 
-
     def log_predict(self, y_true, y_pred, predict_model_version, date, city):
         full_table_name = f"{GCP_PROJECT}.{BQ_DATASET_MONITORING}.predictions"
 
         try:
-
             delete_job = self.bq_client.query(f"""
                 DELETE FROM `{full_table_name}`
                 WHERE date BETWEEN '{date.min()}' AND '{date.max()}'
@@ -279,28 +315,29 @@ class MonitoringClient():
             delete_job.result()  # wait for completion; dml_stats lives on the job, not the result
             deleted = delete_job.dml_stats.deleted_row_count
 
-
         except NotFound:
             pass  # table doesn't exist yet on first run: skip delete
         except Exception as e:
             raise RuntimeError(f"DELETE failed for {full_table_name}: {e}") from e
 
-
-             #define job config to add data
+            # define job config to add data
         job_config = bigquery.LoadJobConfig(
-            write_disposition="WRITE_APPEND",
-            autodetect=True)  # infer schema from DataFrame; creates table if it doesn't exist
+            write_disposition="WRITE_APPEND", autodetect=True
+        )  # infer schema from DataFrame; creates table if it doesn't exist
 
-        df = pd.DataFrame({
-    "date":            date,
-    "city":            city.values,
-    "y_true":          y_true.values,
-    "y_pred":          y_pred,
-    "model_version":   predict_model_version
-})
+        df = pd.DataFrame(
+            {
+                "date": date,
+                "city": city.values,
+                "y_true": y_true.values,
+                "y_pred": y_pred,
+                "model_version": predict_model_version,
+            }
+        )
 
-        self.bq_client.load_table_from_dataframe(df, full_table_name, job_config=job_config).result()
-
+        self.bq_client.load_table_from_dataframe(
+            df, full_table_name, job_config=job_config
+        ).result()
 
 
 class CacheClient(ABC):
@@ -385,9 +422,10 @@ class LocalCacheClient(CacheClient):
         # glob("*.json") lists files in that dir only (non-recursive)
         # relative_to(cache_dir) gives back the logical file_name passable to read()
         path = Path(self.cache_dir) / prefix
-        file_list = [str(file.relative_to(self.cache_dir)) for file in path.glob("*.json")]
+        file_list = [
+            str(file.relative_to(self.cache_dir)) for file in path.glob("*.json")
+        ]
         return file_list
-
 
     def delete(self, cache_list):
         pass
@@ -434,12 +472,6 @@ class GCSCacheClient(CacheClient):
         return len(blob_list)
 
 
-
-
-
-
-
-
 def filter_columns(df, col_to_keep=None, col_to_remove=None):
     """
     Select or drop columns from a DataFrame.
@@ -457,13 +489,17 @@ def filter_columns(df, col_to_keep=None, col_to_remove=None):
         pd.DataFrame: DataFrame with selected/dropped columns.
     """
     if not (col_to_keep or col_to_remove):
-        raise ValueError("At least one of col_to_keep or col_to_remove must be provided")
+        raise ValueError(
+            "At least one of col_to_keep or col_to_remove must be provided"
+        )
 
-    overlap= set(col_to_keep or []) & set(col_to_remove or [])
+    overlap = set(col_to_keep or []) & set(col_to_remove or [])
     df_filtered = df.copy()
 
     if overlap:
-        raise ValueError(f"Columns cannot be in both col_to_keep and col_to_remove: {overlap}")
+        raise ValueError(
+            f"Columns cannot be in both col_to_keep and col_to_remove: {overlap}"
+        )
 
     df_filtered = df.copy()
 
@@ -475,10 +511,23 @@ def filter_columns(df, col_to_keep=None, col_to_remove=None):
     return df_filtered
 
 
-def merge_source_df(df_airqual, df_weather, col_order = ["city", "date", "pm25_avg",
-                                                         "temp_min", "temp_max",
-                                                        "cloud_cover", "humidity", "precipitation",
-                                                        "pressure", "wind_speed", "wind_direction"]):
+def merge_source_df(
+    df_airqual,
+    df_weather,
+    col_order=[
+        "city",
+        "date",
+        "pm25_avg",
+        "temp_min",
+        "temp_max",
+        "cloud_cover",
+        "humidity",
+        "precipitation",
+        "pressure",
+        "wind_speed",
+        "wind_direction",
+    ],
+):
     """
     Merge air quality and weather DataFrames on date and city.
 
@@ -498,13 +547,16 @@ def merge_source_df(df_airqual, df_weather, col_order = ["city", "date", "pm25_a
     if max_gap > 1:
         raise ValueError("⚠️ Missing days detected in weather dataframe. Please check")
 
-    df_merged = pd.merge(left=df_weather, right=df_airqual, on=["date", "city"], how="left")
-
+    df_merged = pd.merge(
+        left=df_weather, right=df_airqual, on=["date", "city"], how="left"
+    )
 
     if set(col_order) != set(df_merged.columns):
         missing = set(col_order) - set(df_merged.columns)
         remaining = set(df_merged.columns) - set(col_order)
-        raise Exception(f"❌ col mismatch: absent in merged df: {missing}, remaining and not reordered: {remaining}")
+        raise Exception(
+            f"❌ col mismatch: absent in merged df: {missing}, remaining and not reordered: {remaining}"
+        )
 
     df_merged = df_merged[col_order]
 
@@ -513,5 +565,7 @@ def merge_source_df(df_airqual, df_weather, col_order = ["city", "date", "pm25_a
 
     matched = df_merged["pm25_avg"].notna().sum()
     total = len(df_merged)
-    print(f"✅ DataFrames merged successfully — {matched}/{total} days have airqual data ({matched / total * 100:.1f}%)")
+    print(
+        f"✅ DataFrames merged successfully — {matched}/{total} days have airqual data ({matched / total * 100:.1f}%)"
+    )
     return df_merged

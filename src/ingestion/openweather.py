@@ -28,22 +28,26 @@ class OpenWeatherClient:
         ... )
     """
 
-    def __init__(self, api_key=None, max_retry=3, storage= "local"):
+    def __init__(self, api_key=None, max_retry=3, storage="local"):
         self.api_key = api_key or os.getenv("API_OW")
         self.max_retry = max_retry
         self.base_url = "https://api.openweathermap.org/data/3.0/onecall/day_summary"
         self.storage = storage
 
         if not self.api_key:
-            raise ValueError("API key must be provided or set in API_OW environment variable")
+            raise ValueError(
+                "API key must be provided or set in API_OW environment variable"
+            )
 
         if self.storage not in ["local", "gcp"]:
-            raise ValueError(f"storage is either 'local' or on 'gcp', got {storage} instead")
+            raise ValueError(
+                f"storage is either 'local' or on 'gcp', got {storage} instead"
+            )
 
         if storage == "local":
-            self.storage_client = LocalCacheClient(cache_dir= CACHE_DIR)
+            self.storage_client = LocalCacheClient(cache_dir=CACHE_DIR)
         else:
-            self.storage_client = GCSCacheClient(bucket_name= BUCKET_NAME)
+            self.storage_client = GCSCacheClient(bucket_name=BUCKET_NAME)
 
     def fetch_city_data(self, city_name, lat, lon, start_date, end_date):
         """
@@ -65,7 +69,7 @@ class OpenWeatherClient:
 
         # Iterate through date range
         for day in tqdm(date_range, desc=f"Fetching {city_name} weather data"):
-            day_str = day.strftime('%Y-%m-%d')
+            day_str = day.strftime("%Y-%m-%d")
             file_name = f"{city_name}/weather/weather_{day_str}.json"
 
             # Skip if already cached
@@ -79,7 +83,7 @@ class OpenWeatherClient:
                 "lon": lon,
                 "date": day_str,
                 "appid": self.api_key,
-                "units": "metric"
+                "units": "metric",
             }
 
             # Retry loop
@@ -89,11 +93,15 @@ class OpenWeatherClient:
                 # Handle rate limit (HTTP 429)
                 if response.status_code == 429:
                     if attempt < self.max_retry - 1:
-                        tqdm.write(f"⚠️ [{city_name}] Rate limit on {day_str}. Retrying in 60s...")
+                        tqdm.write(
+                            f"⚠️ [{city_name}] Rate limit on {day_str}. Retrying in 60s..."
+                        )
                         time.sleep(60)
                         continue
                     else:
-                        tqdm.write(f"❌ [{city_name}] Failed after {self.max_retry} attempts on {day_str}")
+                        tqdm.write(
+                            f"❌ [{city_name}] Failed after {self.max_retry} attempts on {day_str}"
+                        )
                         break
 
                 # Handle success (HTTP 200)
@@ -104,13 +112,17 @@ class OpenWeatherClient:
                             "date": results["date"],
                             "temp_min": results["temperature"]["min"],
                             "temp_max": results["temperature"]["max"],
-                            "temp_avg": (results["temperature"]["min"] + results["temperature"]["max"]) / 2,
+                            "temp_avg": (
+                                results["temperature"]["min"]
+                                + results["temperature"]["max"]
+                            )
+                            / 2,
                             "cloud_cover": results["cloud_cover"]["afternoon"],
                             "humidity": results["humidity"]["afternoon"],
                             "precipitation": results["precipitation"]["total"],
                             "pressure": results["pressure"]["afternoon"],
                             "wind_speed": results["wind"]["max"]["speed"],
-                            "wind_direction": results["wind"]["max"]["direction"]
+                            "wind_direction": results["wind"]["max"]["direction"],
                         }
 
                         # Save to cache
@@ -125,7 +137,9 @@ class OpenWeatherClient:
 
                 # Handle other HTTP errors
                 else:
-                    tqdm.write(f"❌ [{city_name}] HTTP {response.status_code} on {day_str}")
+                    tqdm.write(
+                        f"❌ [{city_name}] HTTP {response.status_code} on {day_str}"
+                    )
                     break
 
             # Rate limiting
@@ -133,9 +147,13 @@ class OpenWeatherClient:
 
         # Summary
         if successful_call + cached_count == len(date_range):
-            print(f"✅ [{city_name}] All days fetched! Cached: {cached_count}, New: {successful_call}")
+            print(
+                f"✅ [{city_name}] All days fetched! Cached: {cached_count}, New: {successful_call}"
+            )
         else:
-            print(f"⚠️ [{city_name}] Incomplete: {successful_call + cached_count}/{len(date_range)} days")
+            print(
+                f"⚠️ [{city_name}] Incomplete: {successful_call + cached_count}/{len(date_range)} days"
+            )
 
     def merge_cached_data(self, city):
         """
@@ -149,7 +167,7 @@ class OpenWeatherClient:
         """
         prefix = f"{city}/weather"
         data = []
-        file_list = self.storage_client.list(prefix= prefix)
+        file_list = self.storage_client.list(prefix=prefix)
 
         for file in file_list:
             data.append(self.storage_client.read(str(file)))
@@ -159,7 +177,6 @@ class OpenWeatherClient:
         df = df.sort_values(by="date").reset_index(drop=True)
 
         return df
-
 
     def get_all_data(self, cities, start_date, end_date):
         """
@@ -180,20 +197,21 @@ class OpenWeatherClient:
         for city, coords in cities.items():
             print(f"Processing {city}...")
 
-
-
             # Fetch and cache data
             self.fetch_city_data(
                 city_name=city,
                 lat=coords["lat"],
                 lon=coords["lon"],
                 start_date=start_date,
-                end_date=end_date
+                end_date=end_date,
             )
 
             # Load all cached data then filter to requested window
             df = self.merge_cached_data(city)
-            df = df[(df["date"] >= pd.to_datetime(start_date)) & (df["date"] <= pd.to_datetime(end_date))]
+            df = df[
+                (df["date"] >= pd.to_datetime(start_date))
+                & (df["date"] <= pd.to_datetime(end_date))
+            ]
 
             if not df.empty:
                 df["city"] = city
@@ -206,6 +224,8 @@ class OpenWeatherClient:
 
         all_cities_df = pd.concat(all_dataframes, ignore_index=True)
         all_cities_df["date"] = pd.to_datetime(all_cities_df["date"])
-        print(f"✅ OpenWeather ingestion complete — {len(all_dataframes)} cities, {len(all_cities_df)} measurements")
+        print(
+            f"✅ OpenWeather ingestion complete — {len(all_dataframes)} cities, {len(all_cities_df)} measurements"
+        )
 
         return all_cities_df

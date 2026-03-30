@@ -22,7 +22,9 @@ class OpenAQClient:
     Cache file format: {city}/sensor_{sensor_id}.json
     """
 
-    def __init__(self, api_key=None, radius=7000, max_retry=3, storage= "local", min_coverage=0.75):
+    def __init__(
+        self, api_key=None, radius=7000, max_retry=3, storage="local", min_coverage=0.75
+    ):
         self.api_key = api_key or os.getenv("API_AQ")
         self.radius = radius
         self.base_url = "https://api.openaq.org/v3"
@@ -31,16 +33,19 @@ class OpenAQClient:
         self.min_coverage = min_coverage
 
         if not self.api_key:
-            raise ValueError("API key must be provided or set in API_AQ environment variable")
+            raise ValueError(
+                "API key must be provided or set in API_AQ environment variable"
+            )
 
         if self.storage not in ["local", "gcp"]:
-            raise ValueError(f"storage is either 'local' or on 'gcp', got {storage} instead")
+            raise ValueError(
+                f"storage is either 'local' or on 'gcp', got {storage} instead"
+            )
 
         if storage == "local":
-            self.storage_client = LocalCacheClient(cache_dir= CACHE_DIR)
+            self.storage_client = LocalCacheClient(cache_dir=CACHE_DIR)
         else:
-            self.storage_client = GCSCacheClient(bucket_name= BUCKET_NAME)
-
+            self.storage_client = GCSCacheClient(bucket_name=BUCKET_NAME)
 
     def _get_headers(self):
         """Get API request headers with authentication."""
@@ -63,7 +68,7 @@ class OpenAQClient:
             "parameters_id": 2,  # PM2.5 only
             "coordinates": coords_str,
             "radius": self.radius,
-            "limit": 1000
+            "limit": 1000,
         }
 
         url = f"{self.base_url}/locations"
@@ -119,18 +124,12 @@ class OpenAQClient:
         """
         # Check cache first
 
-
         if self.storage_client.exists(file_name=file_name):
             return self.storage_client.read(file_name)
 
-
         # Fetch from API
         url = f"{self.base_url}/sensors/{sensor_id}/days"
-        params = {
-            "date_from": start_date,
-            "date_to": end_date,
-            "limit": 1000
-        }
+        params = {"date_from": start_date, "date_to": end_date, "limit": 1000}
 
         for attempt in range(self.max_retry):
 
@@ -162,7 +161,9 @@ class OpenAQClient:
                 return results
 
             elif attempt < self.max_retry - 1:
-                print(f"      ⚠️  API error {response.status_code}, retrying ({attempt + 2}/{self.max_retry})...")
+                print(
+                    f"      ⚠️  API error {response.status_code}, retrying ({attempt + 2}/{self.max_retry})..."
+                )
                 time.sleep(5)
                 continue
 
@@ -187,7 +188,9 @@ class OpenAQClient:
 
         for sensor_id in sensor_ids:
             file_name = f"{city}/airqual/sensor_{sensor_id}.json"
-            sensor_data[sensor_id] = self.fetch_one_sensor_data(sensor_id, start_date, end_date, file_name = file_name)
+            sensor_data[sensor_id] = self.fetch_one_sensor_data(
+                sensor_id, start_date, end_date, file_name=file_name
+            )
 
         all_dataframes = []
 
@@ -199,20 +202,22 @@ class OpenAQClient:
 
             rows = []
             for result in data["results"]:
-                rows.append({
-                    "sensor_id": sensor_id,
-                    "date_from_utc": result["period"]['datetimeFrom']['utc'],
-                    "date_from_local": result["period"]['datetimeFrom']['local'],
-                    "date_to_utc": result["period"]['datetimeTo']['utc'],
-                    "date_to_local": result["period"]['datetimeTo']['local'],
-                    "pm25_avg": result["value"],
-                    "pm25_min": result["summary"]["min"],
-                    "pm25_q25": result["summary"]["q25"],
-                    "pm25_median": result["summary"]["median"],
-                    "pm25_q75": result["summary"]["q75"],
-                    "pm25_max": result["summary"]["max"],
-                    "coverage": result["coverage"]["percentComplete"]
-                })
+                rows.append(
+                    {
+                        "sensor_id": sensor_id,
+                        "date_from_utc": result["period"]["datetimeFrom"]["utc"],
+                        "date_from_local": result["period"]["datetimeFrom"]["local"],
+                        "date_to_utc": result["period"]["datetimeTo"]["utc"],
+                        "date_to_local": result["period"]["datetimeTo"]["local"],
+                        "pm25_avg": result["value"],
+                        "pm25_min": result["summary"]["min"],
+                        "pm25_q25": result["summary"]["q25"],
+                        "pm25_median": result["summary"]["median"],
+                        "pm25_q75": result["summary"]["q75"],
+                        "pm25_max": result["summary"]["max"],
+                        "coverage": result["coverage"]["percentComplete"],
+                    }
+                )
 
             df_sensor = pd.DataFrame(rows)
             all_dataframes.append(df_sensor)
@@ -227,8 +232,9 @@ class OpenAQClient:
         print(f"  ✓ {len(all_measurements)} measurements extracted")
         return all_measurements
 
-    def get_data(self, cities, start_date, end_date, start_project_date,
-                 end_project_date):
+    def get_data(
+        self, cities, start_date, end_date, start_project_date, end_project_date
+    ):
         """
         Get PM2.5 measurements from OpenAQ API for multiple cities.
 
@@ -252,7 +258,9 @@ class OpenAQClient:
             data_loc = self.fetch_location(lat=coords["lat"], lon=coords["lon"])
 
             # Filter sensors based on project timeline
-            sensor_list = self.filter_sensors(data_loc, start_project_date, end_project_date)
+            sensor_list = self.filter_sensors(
+                data_loc, start_project_date, end_project_date
+            )
 
             if not sensor_list:
                 print(f"⚠️  No sensors found for {city}")
@@ -262,11 +270,13 @@ class OpenAQClient:
 
             # Extract measurements for filtered sensors
 
-            aq_by_city = self.extract_all_sensor_data(sensor_list, start_date, end_date, city= city)
+            aq_by_city = self.extract_all_sensor_data(
+                sensor_list, start_date, end_date, city=city
+            )
 
             # Only add if we got data
             if not aq_by_city.empty:
-                aq_by_city['city'] = city
+                aq_by_city["city"] = city
                 all_cities.append(aq_by_city)
             else:
                 print(f"  ⚠️  No valid data extracted for {city}")
@@ -277,8 +287,12 @@ class OpenAQClient:
 
         # Combine all cities data
         all_aq_measurements = pd.concat(all_cities, ignore_index=True)
-        all_aq_measurements["date"] = pd.to_datetime(all_aq_measurements["date_from_local"].str[:10])
+        all_aq_measurements["date"] = pd.to_datetime(
+            all_aq_measurements["date_from_local"].str[:10]
+        )
 
-        print(f"✅ OpenAQ ingestion complete — {len(all_cities)} cities, {len(all_aq_measurements)} measurements")
+        print(
+            f"✅ OpenAQ ingestion complete — {len(all_cities)} cities, {len(all_aq_measurements)} measurements"
+        )
 
         return all_aq_measurements
