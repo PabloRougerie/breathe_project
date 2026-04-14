@@ -2,7 +2,7 @@
 
 End-to-end MLOps pipeline for next-day PM2.5 forecasting across six cities (Paris, Lyon, London, Berlin, New York, Rome). The primary goal is architectural: demonstrate a production-grade monitoring loop with automated drift detection, challenger retraining, and model promotion. 
 
-**Live dashboard:** [Streamlit UI](https://your-streamlit-url) — drift monitoring log + city-level prediction curves.
+**Live dashboard:** [Streamlit UI](https://breatheproject-n9uhfau2pdjhxrymh4nq7x.streamlit.app) — drift monitoring log + city-level prediction curves.
 
 ---
 
