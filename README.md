@@ -1,6 +1,6 @@
 # Breathe — PM2.5 forecasting & MLOps on GCP
 
-End-to-end MLOps pipeline for next-day PM2.5 forecasting across six cities (Paris, Lyon, London, Berlin, New York, Rome). The primary goal is architectural: demonstrate a production-grade monitoring loop with automated drift detection, challenger retraining, and model promotion. The forecasting task is the vehicle, not the destination.
+End-to-end MLOps pipeline for next-day PM2.5 forecasting across six cities (Paris, Lyon, London, Berlin, New York, Rome). The primary goal is architectural: demonstrate a production-grade monitoring loop with automated drift detection, challenger retraining, and model promotion. 
 
 **Live dashboard:** [Streamlit UI](https://your-streamlit-url) — drift monitoring log + city-level prediction curves.
 
