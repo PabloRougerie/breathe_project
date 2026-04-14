@@ -8,7 +8,7 @@ End-to-end MLOps pipeline for next-day PM2.5 forecasting across six cities (Pari
 
 ## What this project demonstrates
 
-- **Full data pipeline** — OpenAQ + OpenWeather APIs → GCS cache → BigQuery (raw, processed, monitoring)
+- **Full data pipeline** — OpenAQ + OpenWeather APIs → idempotent data ingestion pipeline → BigQuery (raw, processed, monitoring)
 - **MLflow model registry** — champion / challenger aliases, reference RMSE tags, artifact storage on GCS
 - **Drift-aware periodic loop** — evaluate champion on each new batch, retrain challenger if drift detected, promote if challenger improves
 - **Containerised execution** — two Cloud Run images (MLflow server + Prefect flows), triggered manually or via Cloud Scheduler
